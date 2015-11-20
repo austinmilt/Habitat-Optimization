@@ -57,14 +57,13 @@ free variable
     cumPass(J,F) 'cumulative passability of barrier j for species f',
     cumHabitat(J,F) 'amount of accessible, quality-adjusted habitat above barrier j for fish t';
 positive variable
-    barrierDummy(J,F) 'barrierDummy(J) = removals(J)*cumPass(Downstream(J),F)',
-    controlDummy(J,F) 'controlDummy(J) = controls(J)*cumPass(J,F)';
+    removalXcumPass(J,F) 'removalXcumPass(J) = removals(J)*cumPass(Downstream(J),F)',
+    controlXcumPass(J,F) 'controlXcumPass(J) = controls(J)*cumPass(J,F)';
 binary variable
     removals(J) 'remove barrier j: yes or no',
     controls(J) 'control the control species above barrier j: yes or no';
 
-
-
+    
 * EQUATION (MODEL) DEFINITION
 
 equations
@@ -75,24 +74,24 @@ eq_cumPass_upstream(J,K,F) 'calculate cumPass(j,t) at each upstream node',
 cn_budget 'enforce habitat management budget constraint',
 cn_cap_CF(F) 'limit available habitat for control species',
 cn_cap_RF(F) 'enforce minimum habitat for restoration species',
-cn_controlDummy_controls(J,F) 'turn controlDummy "on" only when control is applied',
-cn_controlDummy_cumPass(J,F) 'set upper bound of controlDummy to cumPass(j,t)',
-cn_barrierDummy_removals(J,F) 'turn barrierDummy "on" only when barrier is removed',
-cn_barrierDummy_cumPass(J,K,F) 'set upper bound of barrierDummy to cumPass(Downstream(j),t)',
-cn_barrierDummy_upstream(J,K,F) 'enforce lower bound on barrierDummy at each upstream node for control species';
-*cn_controlDummy_equality(J,F) 'Check that controlDummy meets its equality constraint.';
+cn_controlXcumPass_controls(J,F) 'turn controlXcumPass "on" only when control is applied',
+cn_controlXcumPass_cumPass(J,F) 'set upper bound of controlXcumPass to cumPass(j,t)',
+cn_removalXcumPass_removals(J,F) 'turn removalXcumPass "on" only when barrier is removed',
+cn_removalXcumPass_cumPass(J,K,F) 'set upper bound of removalXcumPass to cumPass(Downstream(j),t)',
+cn_removalXcumPass_upstream(J,K,F) 'enforce lower bound on removalXcumPass at each upstream node for control species';
+*cn_controlXcumPass_equality(J,F) 'Check that controlXcumPass meets its equality constraint.';
 
 eq_objective..
     totalHabitat =e= sum((J,RF), cumHabitat(J,RF)) - tradeoff * sum((J,CF), cumHabitat(J,CF));
 
 eq_cumHabitat(J,F)..
-    cumHabitat(J,F) =e= habitat(J,F)*cumPass(J,F) + habitatChange(J,F)*controlDummy(J,F);
+    cumHabitat(J,F) =e= habitat(J,F)*cumPass(J,F) + habitatChange(J,F)*controlXcumPass(J,F);
 
 eq_cumPass_root(J,F)$(Root(J))..
     cumPass(J,F) =e= pass(J,F) + passChange(J,F)*removals(J);
 
 eq_cumPass_upstream(J,K,F)$(not Root(J) and Downstream(J,K))..
-    cumPass(J,F) =e= pass(J,F)*cumPass(K,F) + passChange(J,F)*barrierDummy(J,F);
+    cumPass(J,F) =e= pass(J,F)*cumPass(K,F) + passChange(J,F)*removalXcumPass(J,F);
 
 cn_budget..
     sum(J, costRemoval(J)*removals(J) + costControl(J)*controls(J)) =l= budget;
@@ -103,24 +102,24 @@ cn_cap_CF(F)$(ControlFishes(F))..
 cn_cap_RF(F)$(RestorationFishes(F))..
     sum(J, cumHabitat(J,F)) =g= cap(F);
 
-cn_controlDummy_controls(J,F)..
-    controlDummy(J,F) =l= controls(J);
+cn_controlXcumPass_controls(J,F)..
+    controlXcumPass(J,F) =l= controls(J);
 
-cn_controlDummy_cumPass(J,F)..
-    controlDummy(J,F) =l= cumPass(J,F);
+cn_controlXcumPass_cumPass(J,F)..
+    controlXcumPass(J,F) =l= cumPass(J,F);
 
-cn_barrierDummy_removals(J,F)..
-    barrierDummy(J,F) =l= removals(J);
+cn_removalXcumPass_removals(J,F)..
+    removalXcumPass(J,F) =l= removals(J);
 
-cn_barrierDummy_cumPass(J,K,F)$(not Root(J) and Downstream(J,K))..
-    barrierDummy(J,F) =l= cumPass(K,F);
+cn_removalXcumPass_cumPass(J,K,F)$(not Root(J) and Downstream(J,K))..
+    removalXcumPass(J,F) =l= cumPass(K,F);
 
-cn_barrierDummy_upstream(J,K,F)$((not Root(J)) and ControlFishes(F) and Downstream(J,K))..
-    barrierDummy(J,F) =g= cumPass(K,F) + removals(J) - 1;
+cn_removalXcumPass_upstream(J,K,F)$((not Root(J)) and ControlFishes(F) and Downstream(J,K))..
+    removalXcumPass(J,F) =g= cumPass(K,F) + removals(J) - 1;
 
 * Checked by Austin Milt 11/05/2015 and does not change results (appears to not be necessary)    
-*cn_controlDummy_equality(J,F)..
-*    controlDummy(J,F) =g= cumPass(J,F) + controls(J) - 1;
+*cn_controlXcumPass_equality(J,F)..
+*    controlXcumPass(J,F) =g= cumPass(J,F) + controls(J) - 1;
 
 model fishHabitat /all/;
 
