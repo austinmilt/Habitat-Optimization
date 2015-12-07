@@ -46,3 +46,7 @@ Temporary Items
 *.gdx
 *.lst
 *.~gm
+*.tmp
+*.log
+*.lxi
+*.gpr

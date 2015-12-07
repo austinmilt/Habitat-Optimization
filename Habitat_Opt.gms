@@ -8,55 +8,37 @@ $if not set inputfile $set inputfile 'data.gdx'
 
 * SETS AND DEFINITIONS
 
-set Projects 'projects that can be undertaken at barriers' / 'remove', 'lampricide' /;
-set Barriers 'points at which actions can be taken' / 'A', 'B', 'C', 'D' /;
+sets
+    Goals(*) 'conservation goals to be achieved by taking actions at barriers',
+    Barriers(*) 'points at which actions can be taken',
+    Projects(*) 'projects that can be undertaken at barriers'
+    Dummy(Barriers) 'dummy barrier to set totalPropEfficiency of downstream barriers of roots to 1';
+
 alias (Barriers, J, K);
-set Downstream(J, K) 'barrier immediately downstream of another' / 'A'.'B', 'B'.'C', 'C'.'D'/;
-set Dummy(Barriers) 'dummy barriers the upstream-barrier of which is a root barrier' / 'D' /;
-set Goals 'conservation goals to be achieved by taking actions at barriers' / 'fish1', 'fish2', 'lamprey' /;
 
-parameter weight(Goals) 'objective weight of goal'
-    /   'fish1' 1, 'fish2' 1, 'lamprey' -1 /;
+sets
+    Downstream(J, K) 'barrier immediately downstream of another';
 
-parameter maxBenefit(Goals, Barriers) 'maximum possible contribution to goal at a barrier'
-    /   'fish1'.'A' 0,      'fish1'.'B' 0,      'fish1'.'C' 1,      'fish1'.'D' 0,
-        'fish2'.'A' 0,      'fish2'.'B' 0,      'fish2'.'C' 1,      'fish2'.'D' 0,
-        'lamprey'.'A' 0,    'lamprey'.'B' 1,    'lamprey'.'C' 1,    'lamprey'.'D' 0 /;
+parameters
+    weight(Goals) 'objective weight of goal',
+    maxBenefit(Goals, Barriers) 'maximum possible contribution to goal at a barrier',
+    baseEfficiency(Goals, Barriers) 'base level efficiency of goal contribution at barrier',
+    projPropEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier by doing a project that is affected by and effects up/downstream efficiencies',
+    projSingleEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier that affects only the delivery at that barrier and not others',
+    projectCost(Barriers, Projects) 'cost of successfully completing project at barrier',
+    cap(Goals) 'minimum (or maximum) allowable value of each goals total benefit';
 
-parameter baseEfficiency(Goals, Barriers) 'base level efficiency of goal contribution at barrier'
-    /   'fish1'.'A' 0,    'fish1'.'B' 0,    'fish1'.'C' 0.5,    'fish1'.'D' 1,
-        'fish2'.'A' 0,    'fish2'.'B' 0,    'fish2'.'C' 0.5,    'fish2'.'D' 1,
-        'lamprey'.'A' 0,  'lamprey'.'B' 0.5,  'lamprey'.'C' 0.5,  'lamprey'.'D' 1 /;
-
-parameter projPropEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier by doing a project'
-    /   'fish1'.'A'.'remove' 0,         'fish1'.'B'.'remove' 0,         'fish1'.'C'.'remove' 0.5,           'fish1'.'D'.'remove' 0,
-        'fish1'.'A'.'lampricide' 0,     'fish1'.'B'.'lampricide' 0,     'fish1'.'C'.'lampricide' 0,         'fish1'.'D'.'lampricide' 0,
-        'fish2'.'A'.'remove' 0,         'fish2'.'B'.'remove' 0,         'fish2'.'C'.'remove' 0.5,           'fish2'.'D'.'remove' 0,
-        'fish2'.'A'.'lampricide' 0,     'fish2'.'B'.'lampricide' 0,     'fish2'.'C'.'lampricide' 0,         'fish2'.'D'.'lampricide' 0,
-        'lamprey'.'A'.'remove' 0,       'lamprey'.'B'.'remove' 0,       'lamprey'.'C'.'remove' 0.5,         'lamprey'.'D'.'remove' 0,
-        'lamprey'.'A'.'lampricide' 0,   'lamprey'.'B'.'lampricide' 0,   'lamprey'.'C'.'lampricide' 0,       'lamprey'.'D'.'lampricide' 0 /;
-        
-parameter projSingleEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier by doing a project'
-    /   'fish1'.'A'.'remove' 0,         'fish1'.'B'.'remove' 0,         'fish1'.'C'.'remove' 0,             'fish1'.'D'.'remove' 0,
-        'fish1'.'A'.'lampricide' 0,     'fish1'.'B'.'lampricide' 0,     'fish1'.'C'.'lampricide' 0,         'fish1'.'D'.'lampricide' 0,
-        'fish2'.'A'.'remove' 0,         'fish2'.'B'.'remove' 0,         'fish2'.'C'.'remove' 0,             'fish2'.'D'.'remove' 0,
-        'fish2'.'A'.'lampricide' 0,     'fish2'.'B'.'lampricide' 0,     'fish2'.'C'.'lampricide' 0,         'fish2'.'D'.'lampricide' 0,
-        'lamprey'.'A'.'remove' 0,       'lamprey'.'B'.'remove' 0,       'lamprey'.'C'.'remove' 0,           'lamprey'.'D'.'remove' 0,
-        'lamprey'.'A'.'lampricide' 0,   'lamprey'.'B'.'lampricide' -0.5,   'lamprey'.'C'.'lampricide' 0,      'lamprey'.'D'.'lampricide' 0 /;
-
-parameter projectCost(Barriers, Projects) 'cost of successfully completing project at barrier'
-    /   'A'.'remove' 2000,  'A'.'lampricide' 2000,
-        'B'.'remove' 2000,  'B'.'lampricide' 2000,
-        'C'.'remove' 2000,  'C'.'lampricide' 2000,
-        'D'.'remove' 5001,  'D'.'lampricide' 5001 /;
-
-parameter cap(Goals) 'minimum (or maximum) allowable value of each goals total benefit'
-    /   'fish1' 0, 'fish2' 0, 'lamprey' 5 /;
-
-scalar
-    budget 'total budget for spending on all projects' / 5000 /,
+scalars
+    budget 'total budget for spending on all projects',
     epsilon 'epsilon value for equality tests' / 1e-6 /;
-    
+
+
+* LOAD MODEL DATA
+$GDXIN %inputfile%
+$load Projects, Barriers, Goals, Downstream, weight, maxBenefit, Dummy
+$load baseEfficiency, projPropEfficiency, projectCost, cap, budget
+$GDXIN
+
 
 * DEFINE DUMMY BARRIER PARAMETERS
 maxBenefit(Goals, Barriers)$(Dummy(Barriers)) = 0;
