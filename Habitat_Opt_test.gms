@@ -35,7 +35,7 @@ parameter projPropEfficiency(Goals, Barriers, Projects) 'efficiency increase of 
         'fish2'.'A'.'lampricide' 0,     'fish2'.'B'.'lampricide' 0,     'fish2'.'C'.'lampricide' 0,         'fish2'.'D'.'lampricide' 0,
         'lamprey'.'A'.'remove' 0,       'lamprey'.'B'.'remove' 0,       'lamprey'.'C'.'remove' 0.5,         'lamprey'.'D'.'remove' 0,
         'lamprey'.'A'.'lampricide' 0,   'lamprey'.'B'.'lampricide' 0,   'lamprey'.'C'.'lampricide' 0,       'lamprey'.'D'.'lampricide' 0 /;
-        
+
 parameter projSingleEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier by doing a project'
     /   'fish1'.'A'.'remove' 0,         'fish1'.'B'.'remove' 0,         'fish1'.'C'.'remove' 0,             'fish1'.'D'.'remove' 0,
         'fish1'.'A'.'lampricide' 0,     'fish1'.'B'.'lampricide' 0,     'fish1'.'C'.'lampricide' 0,         'fish1'.'D'.'lampricide' 0,
@@ -56,7 +56,7 @@ parameter cap(Goals) 'minimum (or maximum) allowable value of each goals total b
 scalar
     budget 'total budget for spending on all projects' / 5000 /,
     epsilon 'epsilon value for equality tests' / 1e-6 /;
-    
+
 
 * DEFINE DUMMY BARRIER PARAMETERS
 maxBenefit(Goals, Barriers)$(Dummy(Barriers)) = 0;
@@ -78,11 +78,11 @@ if (cntEffOOB > 0, abort 'Total possible efficiency for a goal at a barrier must
 
 free variable
     totalBenefit 'total weighted benefit across all goals',
-    benefit(Goals) 'total benefit to a particular goal across all barriers';
+    benefit(Goals) 'total benefit to a particular goal across all barriers',
+    totalEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier',
+    totalPropEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier that propogates up/down stream';
 
 positive variable
-    totalEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier',
-    totalPropEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier that propogates up/down stream',
     actionXeff(Goals, Barriers, Projects) 'actionXeff(Goals, Barriers, Projects) = actions(Barriers, Projects)*totalPropEfficiency(Goals, Downstream(Barriers))';
 
 binary variable
@@ -127,7 +127,7 @@ cn_budget..
     sum((Barriers, Projects), projectCost(Barriers, Projects) * actions(Barriers, Projects)) =l= budget;
 
 cn_benefits(Goals)..
-    weight(Goals) * (benefit(Goals) - cap(Goals)) =g= -epsilon;
+    sign(weight(Goals)) * (benefit(Goals) - cap(Goals)) =g= -epsilon;
 
 
 model barrierModel /all/;
@@ -148,9 +148,16 @@ solve barrierModel using mip max totalBenefit;
 abort$(barrierModel.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 
-set toAct;
-parameter remainingBudget;
+* DISPLAY EXTRA RESULTS
+set ActionsToPerform;
+parameter RemainingBudget;
 remainingBudget = budget - sum((Barriers, Projects), projectCost(Barriers, Projects) * actions.l(Barriers, Projects));
-toAct(Barriers, Projects) = yes$(actions.l(Barriers, Projects));
-display toAct;
-display remainingBudget;
+ActionsToPerform(Barriers, Projects) = yes$(actions.l(Barriers, Projects));
+display ActionsToPerform;
+display RemainingBudget;
+
+
+* WRITE OUTPUT
+$GDXOUT outfile
+$unload ActionsToPerform RemainingBudget weight maxBenefit projPropEfficiency projSingleEfficiency baseEfficiency projectCost cap
+$GDXOUT

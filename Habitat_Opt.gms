@@ -37,6 +37,7 @@ scalars
 $GDXIN %inputfile%
 $load Projects, Barriers, Goals, Downstream, weight, maxBenefit, Dummy
 $load baseEfficiency, projPropEfficiency, projectCost, cap, budget
+$load projSingleEfficiency
 $GDXIN
 
 
@@ -60,11 +61,11 @@ if (cntEffOOB > 0, abort 'Total possible efficiency for a goal at a barrier must
 
 free variable
     totalBenefit 'total weighted benefit across all goals',
-    benefit(Goals) 'total benefit to a particular goal across all barriers';
+    benefit(Goals) 'total benefit to a particular goal across all barriers',
+    totalEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier',
+    totalPropEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier that propogates up/down stream';
 
 positive variable
-    totalEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier',
-    totalPropEfficiency(Goals, Barriers) 'total efficiency of delivering a benefit to a goal across all projects at a barrier that propogates up/down stream',
     actionXeff(Goals, Barriers, Projects) 'actionXeff(Goals, Barriers, Projects) = actions(Barriers, Projects)*totalPropEfficiency(Goals, Downstream(Barriers))';
 
 binary variable
@@ -109,7 +110,7 @@ cn_budget..
     sum((Barriers, Projects), projectCost(Barriers, Projects) * actions(Barriers, Projects)) =l= budget;
 
 cn_benefits(Goals)..
-    weight(Goals) * (benefit(Goals) - cap(Goals)) =g= -epsilon;
+    sign(weight(Goals)) * (benefit(Goals) - cap(Goals)) =g= -epsilon;
 
 
 model barrierModel /all/;
@@ -130,9 +131,16 @@ solve barrierModel using mip max totalBenefit;
 abort$(barrierModel.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 
-set toAct;
-parameter remainingBudget;
+* DISPLAY EXTRA RESULTS
+set ActionsToPerform;
+parameter RemainingBudget;
 remainingBudget = budget - sum((Barriers, Projects), projectCost(Barriers, Projects) * actions.l(Barriers, Projects));
-toAct(Barriers, Projects) = yes$(actions.l(Barriers, Projects));
-display toAct;
-display remainingBudget;
+ActionsToPerform(Barriers, Projects) = yes$(actions.l(Barriers, Projects));
+display ActionsToPerform;
+display RemainingBudget;
+
+
+* WRITE OUTPUT
+$GDXOUT outfile
+$unload ActionsToPerform RemainingBudget weight maxBenefit projPropEfficiency projSingleEfficiency baseEfficiency projectCost cap
+$GDXOUT
