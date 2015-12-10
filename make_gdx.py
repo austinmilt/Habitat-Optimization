@@ -9,7 +9,8 @@ def main():
     
     # GAMS model variables/parameters
     currentHab = 'maxBenefit'
-    currentPass = 'baseEfficiency'
+    basePEff = 'basePropEfficiency'
+    baseSEff = 'baseSingleEfficiency'
     projectPEff = 'projPropEfficiency'
     projectSEff = 'projSingleEfficiency'
     barriers = 'Barriers'
@@ -60,25 +61,25 @@ def main():
     targetMap = {
         'Fish1': {
             currentHab: 'USHAB1',
-            currentPass: 'PASS04',
+            basePEff: 'PASS04',
             projectPEff: 'DELTAPASS1'
         },
         
         'Fish2': {
             currentHab: 'USHAB2',
-            currentPass: 'PASS07',
+            basePEff: 'PASS07',
             projectPEff: 'DELTAPASS2'
         },
         
         'Fish3': {
             currentHab: 'USHAB3',
-            currentPass: 'PASS10',
+            basePEff: 'PASS10',
             projectPEff: 'DELTAPASS3'
         },
         
         'Lamprey': {
             currentHab: 'USHAB4',
-            currentPass: 'PASS_LAMP',
+            basePEff: 'PASS_LAMP',
             projectPEff: 'DELTAPASS4'
         }
     }
@@ -128,7 +129,8 @@ def main():
     dbVars = {
         budget: database.add_parameter(budget, 0),
         currentHab: database.add_parameter(currentHab, 2),
-        currentPass: database.add_parameter(currentPass, 2),
+        basePEff: database.add_parameter(basePEff, 2),
+        baseSEff: database.add_parameter(baseSEff, 2),
         projectPEff: database.add_parameter(projectPEff, 3),
         projectSEff: database.add_parameter(projectSEff, 3),
         barriers: database.add_set(barriers, 1),
@@ -163,7 +165,8 @@ def main():
             
         for t in Goals:
             dbVars[currentHab].add_record((t, barrierID)).value = row[cI[targetMap[t][currentHab]]]
-            dbVars[currentPass].add_record((t, barrierID)).value = row[cI[targetMap[t][currentPass]]]
+            dbVars[basePEff].add_record((t, barrierID)).value = row[cI[targetMap[t][basePEff]]]
+            dbVars[baseSEff].add_record((t, barrierID)).value = 0
             dbVars[projectPEff].add_record((t, barrierID, removalName)).value = row[cI[targetMap[t][projectPEff]]]
             dbVars[projectSEff].add_record((t, barrierID, removalName)).value = 0
             

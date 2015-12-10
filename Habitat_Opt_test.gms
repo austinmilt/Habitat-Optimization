@@ -23,10 +23,15 @@ parameter maxBenefit(Goals, Barriers) 'maximum possible contribution to goal at 
         'fish2'.'A' 0,      'fish2'.'B' 0,      'fish2'.'C' 1,      'fish2'.'D' 0,
         'lamprey'.'A' 0,    'lamprey'.'B' 1,    'lamprey'.'C' 1,    'lamprey'.'D' 0 /;
 
-parameter baseEfficiency(Goals, Barriers) 'base level efficiency of goal contribution at barrier'
+parameter basePropEfficiency(Goals, Barriers) 'base level efficiency of goal contribution at barrier'
     /   'fish1'.'A' 0,    'fish1'.'B' 0,    'fish1'.'C' 0.5,    'fish1'.'D' 1,
         'fish2'.'A' 0,    'fish2'.'B' 0,    'fish2'.'C' 0.5,    'fish2'.'D' 1,
         'lamprey'.'A' 0,  'lamprey'.'B' 0.5,  'lamprey'.'C' 0.5,  'lamprey'.'D' 1 /;
+        
+parameter baseSingleEfficiency(Goals, Barriers) 'base level efficiency of goal contribution at barrier'
+    /   'fish1'.'A' 0,    'fish1'.'B' 0,    'fish1'.'C' 0,    'fish1'.'D' 0,
+        'fish2'.'A' 0,    'fish2'.'B' 0,    'fish2'.'C' 0,    'fish2'.'D' 0,
+        'lamprey'.'A' 0,  'lamprey'.'B' 0,  'lamprey'.'C' 0,  'lamprey'.'D' 0 /;
 
 parameter projPropEfficiency(Goals, Barriers, Projects) 'efficiency increase of delivering a goal at a barrier by doing a project'
     /   'fish1'.'A'.'remove' 0,         'fish1'.'B'.'remove' 0,         'fish1'.'C'.'remove' 0.5,           'fish1'.'D'.'remove' 0,
@@ -60,7 +65,8 @@ scalar
 
 * DEFINE DUMMY BARRIER PARAMETERS
 maxBenefit(Goals, Barriers)$(Dummy(Barriers)) = 0;
-baseEfficiency(Goals, Barriers)$(Dummy(Barriers)) = 1;
+basePropEfficiency(Goals, Barriers)$(Dummy(Barriers)) = 1;
+baseSingleEfficiency(Goals, Barriers)$(Dummy(Barriers)) = 0;
 projPropEfficiency(Goals, Barriers, Projects)$(Dummy(Barriers)) = 0;
 projSingleEfficiency(Goals, Barriers, Projects)$(Dummy(Barriers)) = 0;
 projectCost(Barriers, Projects)$(Dummy(Barriers)) = budget + 1;
@@ -69,7 +75,7 @@ projectCost(Barriers, Projects)$(Dummy(Barriers)) = budget + 1;
 * CHECK DATA REQUIREMENTS
 parameter possibleEfficiency(Goals, Barriers) 'total possible efficiency at a barrier for a goal';
 parameter cntEffOOB 'number of Goal/Barrier pairs for which the total possible efficiency is outside [0, 1], which violates assumptions';
-possibleEfficiency(Goals, Barriers) = baseEfficiency(Goals, Barriers) + sum(Projects, projPropEfficiency(Goals, Barriers, Projects)) + sum(Projects, projSingleEfficiency(Goals, Barriers, Projects));
+possibleEfficiency(Goals, Barriers) = baseSingleEfficiency(Goals, Barriers) + basePropEfficiency(Goals, Barriers) + sum(Projects, projPropEfficiency(Goals, Barriers, Projects)) + sum(Projects, projSingleEfficiency(Goals, Barriers, Projects));
 cntEffOOB = sum((Goals, Barriers)$((possibleEfficiency(Goals, Barriers) > (1 + epsilon)) or (possibleEfficiency(Goals, Barriers) < (0 - epsilon))), 1);
 if (cntEffOOB > 0, abort 'Total possible efficiency for a goal at a barrier must be in the closed interval [0, 1].');
 
@@ -109,10 +115,10 @@ eq_benefit(Goals)..
     benefit(Goals) =e= sum((Barriers), maxBenefit(Goals, Barriers) * totalEfficiency(Goals, Barriers));
 
 eq_totalEfficiency(Goals, Barriers)..
-    totalEfficiency(Goals, Barriers) =e= sum(Projects, projSingleEfficiency(Goals, Barriers, Projects) * actions(Barriers, Projects)) + totalPropEfficiency(Goals, Barriers);
+    totalEfficiency(Goals, Barriers) =e= baseSingleEfficiency(Goals, Barriers) + sum(Projects, projSingleEfficiency(Goals, Barriers, Projects) * actions(Barriers, Projects)) + totalPropEfficiency(Goals, Barriers);
 
 eq_totalPropEfficiency(Goals, J, K)$(Downstream(J,K) and (not Dummy(J)))..
-    totalPropEfficiency(Goals, J) =e= baseEfficiency(Goals, J) * totalPropEfficiency(Goals, K) + sum(Projects, projPropEfficiency(Goals, J, Projects) * actionXeff(Goals, J, Projects));
+    totalPropEfficiency(Goals, J) =e= basePropEfficiency(Goals, J) * totalPropEfficiency(Goals, K) + sum(Projects, projPropEfficiency(Goals, J, Projects) * actionXeff(Goals, J, Projects));
 
 cn_actionXeff_totalPropEfficiency(Goals, J, Projects, K)$(Downstream(J,K) and (not Dummy(J)))..
     actionXeff(Goals, J, Projects) =l= totalPropEfficiency(Goals, K);
@@ -159,5 +165,5 @@ display RemainingBudget;
 
 * WRITE OUTPUT
 $GDXOUT outfile
-$unload ActionsToPerform RemainingBudget weight maxBenefit projPropEfficiency projSingleEfficiency baseEfficiency projectCost cap
+$unload ActionsToPerform RemainingBudget weight maxBenefit projPropEfficiency projSingleEfficiency basePropEfficiency projectCost cap
 $GDXOUT
