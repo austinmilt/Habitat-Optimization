@@ -8,13 +8,13 @@ def main():
     # ~~ VARIABLE AND COLUMN NAME DECLARATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
     
     # GAMS model variables/parameters
-    currentHab = 'maxBenefit'
+    currentHab = 'metricMax'
     basePEff = 'basePropEfficiency'
     baseSEff = 'baseSingleEfficiency'
     projectPEff = 'projPropEfficiency'
     projectSEff = 'projSingleEfficiency'
     barriers = 'Barriers'
-    goals = 'Goals'
+    goals = 'Metrics'
     budget = 'budget'
     caps = 'cap'
     costs = 'projectCost'
@@ -146,6 +146,7 @@ def main():
     # simple definitions
     dbVars[budget].add_record().value = b
     dbVars[dummy].add_record(dummyBarrierName)
+    dbVars[barriers].add_record(dummyBarrierName)
     for x in Goals: dbVars[goals].add_record(x)
     for x in capT: dbVars[caps].add_record(x).value = capT[x]
     for x in weightT: dbVars[weight].add_record(x).value = weightT[x]
