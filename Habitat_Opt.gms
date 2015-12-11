@@ -84,8 +84,7 @@ eq_totalPropEfficiency 'efficiency of delivering metrics at barriers from all pr
 cn_actionXeff_totalPropEfficiency 'part of equality constraint for actionXeff',
 cn_actionXeff_actions 'part of equality constraint for actionXeff',
 cn_actionXeff_effAndAction 'part of equality constraint for actionXeff',
-cn_budget 'budget constraint',
-cn_values 'ensure minimum (or maximum) metric thresholds are met';
+cn_budget 'budget constraint';
 
 eq_objective..
     objective =e= sum((Metrics), weight(Metrics) * value(Metrics));
@@ -111,10 +110,7 @@ cn_actionXeff_effAndAction(Metrics, J, Projects, K)$(Downstream(J,K) and (not Du
 cn_budget..
     sum((Barriers, Projects), projectCost(Barriers, Projects) * actions(Barriers, Projects)) =l= budget;
 
-cn_values(Metrics)..
-    sign(weight(Metrics)) * (value(Metrics) - cap(Metrics)) =g= -epsilon;
 
-    
 model barrierModel /all/;
 
 
@@ -126,9 +122,12 @@ barrierModel.holdfixed = 1;
 barrierModel.limcol    = 0;
 barrierModel.limrow    = 0;
 
-
 * fix downstream efficiency of roots at 1 to avoid issues in referencing
 totalPropEfficiency.fx(Metrics, Barriers)$(Dummy(Barriers)) = 1;
+
+* set bounds on Metric values to meet caps
+value.up(Metrics)$(weight(Metrics) lt 0) = cap(Metrics);
+value.lo(Metrics)$(weight(Metrics) gt 0) = cap(Metrics);
 
 solve barrierModel using mip max objective;
 abort$(barrierModel.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
