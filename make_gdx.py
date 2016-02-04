@@ -1,50 +1,56 @@
 ### DOCUMENTATION
 
 def main():
-    # see Fishwerks_Opt_Inv_v4.gms for descriptions
+    # see Habitat_Opt.gms for descriptions
     
     import csv, gams
     
     # ~~ VARIABLE AND COLUMN NAME DECLARATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
     
     # GAMS model variables/parameters
-    currentHab = 'metricMax'
-    basePEff = 'basePropEfficiency'
-    baseSEff = 'baseSingleEfficiency'
-    projectPEff = 'projPropEfficiency'
-    projectSEff = 'projSingleEfficiency'
+    benefitMaxBase = 'benefitMaxBase'
+    benefitMaxChange = 'benefitMaxChange'
+    passBase = 'passBase'
+    passChange = 'passChange'
     barriers = 'Barriers'
-    goals = 'Metrics'
+    roots = 'Root'
+    goals = 'Targets'
+    beneficiaries = 'TargetsBeneficiary'
+    controls = 'TargetsControl'
     budget = 'budget'
     caps = 'cap'
-    costs = 'projectCost'
+    costs = 'cost'
     downstream = 'Downstream'
     projects = 'Projects'
+    projectsPass = 'ProjectsPassability'
+    projectsBen = 'ProjectsBenefit'
     weight = 'weight'
-    dummy = 'Dummy'
+    # dummy = 'Dummy'
     
     # excel CSV columns (more below in column mapping section)
     barrierIDName = 'BID' # csv column name for Barriers set 
     downstreamIDName = 'DSID' # csv column name for down-stream ID D(J)
     removalCostName = 'COST' # csv column name for cR(J)
-    lampCostName = 'LAMPCOST' # csv column name for lampricide treatment cH(J)
+    lampCostName = 'HABCOST' # csv column name for lampricide treatment cH(J)
     
     
 
     # ~~ PARAMETER AND SET DEFINITIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
     
     b = 5e5
-    Goals = ['Fish1', 'Fish2', 'Fish3', 'Lamprey']
+    Targets = ['Fish1', 'Fish2', 'Fish3', 'Lamprey']
+    beneficiariesT = ['Fish1', 'Fish2', 'Fish3']
+    controlsT = ['Lamprey']
     capT = {'Fish1': 0, 'Fish2': 0, 'Fish3': 0, 'Lamprey': float('inf')}
-    weightT = {'Fish1': 1, 'Fish2': 1, 'Fish3': 1, 'Lamprey': -1e-3}
+    weightT = {'Fish1': 1, 'Fish2': 1, 'Fish3': 1, 'Lamprey': -1}
     removalName = 'remove' # barrier removal project
     lampricideName = 'lampricide' # lampricide application project
-    projectNames = (removalName, lampricideName)
+    projectTypes = {removalName: projectsPass, lampricideName: projectsBen}
     lampricideEfficiency = -0.95 # proportion of lamprey increased by lampricide (negative values reduce lamprey)
-    dummyBarrierName = 'DUMMYBARRIER'
+    # dummyBarrierName = 'DUMMYBARRIER'
     
     # dataFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\Test Results\barriers.csv'
-    dataFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\OHanley Test\Catchment624777.csv'
+    dataFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\OHanley Generic\OPL code\Catchment624777.csv'
     outputFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\code\data.gdx'
     
     # mapping from project names to project costs
@@ -60,27 +66,31 @@ def main():
     #       Level 2: Parameter Name and Column Name
     targetMap = {
         'Fish1': {
-            currentHab: 'USHAB1',
-            basePEff: 'PASS04',
-            projectPEff: 'DELTAPASS1'
+            benefitMaxBase: 'USHAB1',
+            passBase: 'PASS04',
+            passChange: 'DELTAPASS1',
+            benefitMaxChange: 'DELTAHAB1'
         },
         
         'Fish2': {
-            currentHab: 'USHAB2',
-            basePEff: 'PASS07',
-            projectPEff: 'DELTAPASS2'
+            benefitMaxBase: 'USHAB2',
+            passBase: 'PASS07',
+            passChange: 'DELTAPASS2',
+            benefitMaxChange: 'DELTAHAB2'
         },
         
         'Fish3': {
-            currentHab: 'USHAB3',
-            basePEff: 'PASS10',
-            projectPEff: 'DELTAPASS3'
+            benefitMaxBase: 'USHAB3',
+            passBase: 'PASS10',
+            passChange: 'DELTAPASS3',
+            benefitMaxChange: 'DELTAHAB3'
         },
         
         'Lamprey': {
-            currentHab: 'USHAB4',
-            basePEff: 'PASS_LAMP',
-            projectPEff: 'DELTAPASS4'
+            benefitMaxBase: 'USHAB4',
+            passBase: 'PASS_LAMP',
+            passChange: 'DELTAPASS4',
+            benefitMaxChange: 'DELTAHAB4'
         }
     }
     
@@ -128,56 +138,59 @@ def main():
     # declarations
     dbVars = {
         budget: database.add_parameter(budget, 0),
-        currentHab: database.add_parameter(currentHab, 2),
-        basePEff: database.add_parameter(basePEff, 2),
-        baseSEff: database.add_parameter(baseSEff, 2),
-        projectPEff: database.add_parameter(projectPEff, 3),
-        projectSEff: database.add_parameter(projectSEff, 3),
+        benefitMaxBase: database.add_parameter(benefitMaxBase, 2),
+        benefitMaxChange: database.add_parameter(benefitMaxChange, 3),
+        passBase: database.add_parameter(passBase, 2),
+        passChange: database.add_parameter(passChange, 3),
         barriers: database.add_set(barriers, 1),
+        roots: database.add_set(roots, 1),
         goals: database.add_set(goals, 1),
+        beneficiaries: database.add_set(beneficiaries, 1),
+        controls: database.add_set(controls, 1),
         caps: database.add_parameter(caps, 1),
         costs: database.add_parameter(costs, 2),
         downstream: database.add_set(downstream, 2),
         weight: database.add_parameter(weight, 1),
         projects: database.add_parameter(projects, 1),
-        dummy: database.add_parameter(dummy, 1)
+        projectsPass: database.add_parameter(projectsPass, 1),
+        projectsBen: database.add_parameter(projectsBen, 1),
+        # dummy: database.add_parameter(dummy, 1)
     }
     
     # simple definitions
     dbVars[budget].add_record().value = b
-    dbVars[dummy].add_record(dummyBarrierName)
-    dbVars[barriers].add_record(dummyBarrierName)
-    for x in Goals: dbVars[goals].add_record(x)
+    # dbVars[dummy].add_record(dummyBarrierName)
+    # dbVars[barriers].add_record(dummyBarrierName)
+    for x in Targets: dbVars[goals].add_record(x)
+    for x in beneficiariesT: dbVars[beneficiaries].add_record(x)
+    for x in controlsT: dbVars[controls].add_record(x)
     for x in capT: dbVars[caps].add_record(x).value = capT[x]
     for x in weightT: dbVars[weight].add_record(x).value = weightT[x]
-    for x in projectNames: dbVars[projects].add_record(x)
+    for x in projectTypes:
+        dbVars[projects].add_record(x)
+        if projectTypes[x] == projectsPass: dbVars[projectsPass].add_record(x)
+        elif projectTypes[x] == projectsBen: dbVars[projectsBen].add_record(x)
     
     # definitions coming from rows of data[]
     for row in data:
         
         barrierID = row[cI[barrierIDName]]
         dbVars[barriers].add_record(barrierID)
+        dbVars[benefitMaxChange].add_record((barrierID, lampricideName, 'Lamprey')).value = row[cI[targetMap['Lamprey'][benefitMaxChange]]]
         
         if row[cI[downstreamIDName]] == '-1': # self is root
-            dbVars[downstream].add_record((barrierID, dummyBarrierName))
+            # dbVars[downstream].add_record((barrierID, dummyBarrierName))
+            dbVars[roots].add_record(barrierID)
             
         else: # has a downstream node
             dbVars[downstream].add_record((barrierID, row[cI[downstreamIDName]]))
             
-        for t in Goals:
-            dbVars[currentHab].add_record((t, barrierID)).value = row[cI[targetMap[t][currentHab]]]
-            dbVars[basePEff].add_record((t, barrierID)).value = row[cI[targetMap[t][basePEff]]]
-            dbVars[baseSEff].add_record((t, barrierID)).value = 0
-            dbVars[projectPEff].add_record((t, barrierID, removalName)).value = row[cI[targetMap[t][projectPEff]]]
-            dbVars[projectSEff].add_record((t, barrierID, removalName)).value = 0
+        for t in Targets:
+            dbVars[benefitMaxBase].add_record((barrierID, t)).value = row[cI[targetMap[t][benefitMaxBase]]]
+            dbVars[passBase].add_record((barrierID, t)).value = row[cI[targetMap[t][passBase]]]
+            dbVars[passChange].add_record((barrierID, removalName, t)).value = row[cI[targetMap[t][passChange]]]
             
-            # define effect of lampricide on fishes (0 for everythnig but lamprey)
-            if t == 'Lamprey': efficiency = lampricideEfficiency
-            else: efficiency = 0
-            dbVars[projectSEff].add_record((t, barrierID, lampricideName)).value = efficiency
-            dbVars[projectPEff].add_record((t, barrierID, lampricideName)).value = 0
-            
-        for v in projectNames:
+        for v in projectTypes:
             dbVars[costs].add_record((barrierID, v)).value = row[cI[project2Cost[v]]]
         
         
