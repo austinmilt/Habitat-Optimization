@@ -1,4 +1,5 @@
-$title Barrier Removal and Lampricide Applicaiton (Fishworks v5)
+$title Habitat Optimization with Generic Barrier or Habitat Actions (Fishworks v6)
+* Based on O'Hanley model formulation v2, model 1
 
 * DEFINE COMMAND-LINE OPTIONS
 
@@ -9,117 +10,122 @@ $if not set inputfile $set inputfile 'data.gdx'
 * SETS AND DEFINITIONS
 
 sets
-    Fishes(*) 'set of target species for restoration or control (by species identity)',
+    Targets(*) 'set of targets to be affected by project actions',
     Barriers(*) 'set of candidate dams/road culverts for removal/upgrade (by ID number)';
 alias
-    (Fishes,F),
+    (Targets,T),
     (Barriers,J,K);
 sets
     Downstream(J,K) 'K is the barrier immediately downstream from J; used for tracing upstream/downstream effects of actions',
     Root(J) 'root nodes of river-system (barriers with no downstream node)',
-    RestorationFishes(F) 'set of target species for restoration',
-    ControlFishes(F) 'set of target species for control/limitation';
+    TargetsBeneficiary(T) 'set of beneficiary targets',
+    TargetsControl(T) 'set of targets to reduce/control';
 alias
-    (RestorationFishes,RF),
-    (ControlFishes,CF);
+    (TargetsBeneficiary,TB),
+    (TargetsControl,TC);
 parameter
-    pass(J,F) 'current passability at barrier j for fish f',
-    passChange(J,F) 'increase in passability due to barrier removal',
-    habitat(J,F) 'current quality-adjusted habitat in area j for fish f',
-    habitatChange(J,F) 'change in quality-adjusted habitat in area j for fish f',
-    costRemoval(J) 'cost of removing barrier j',
-    costControl(J) 'cost of controlling control species above barrier j',
-    cap(F) 'max habitat for control species / min habitat for restoration species';
+    passBase(J,T) 'current passability at barrier j for target t',
+    passChange(J,T) 'increase in passability due to barrier removal',
+    benefitMaxBase(J,T) 'baseline potential quality-adjusted benefit above barrier j for target t',
+    benefitMaxChange(J,T) 'change in potential quality-adjusted benefit in area j for target t',
+    costPass(J) 'cost of executing action that affects the passability of barrier j',
+    costBen(J) 'cost of executing action that affects total potential benefit above barrier j',
+    cap(T) 'max (min) allowed accessibility-weighted benefit for TargetsControl (TargetsBeneficiary)',
+    weight(T) 'weight/priority of target t';
 scalar
-    budget 'management budget (barrier removal + control actions)',
-    tradeoff 'weight on control species in objective to control relative contribution to objective' / 1e-3 /;
+    budget 'management budget (barrier passability + potential benefit actions)',
+    obj2Weight 'weight on secondary objective (here to do with control targets)' / 1e-3 /;
 
 
 * LOAD MODEL DATA
 $GDXIN %inputfile%
-$load Fishes, Barriers, Downstream, Root, RestorationFishes, ControlFishes
-$load pass, passChange, habitat, habitatChange, costRemoval, costControl, cap
-$load budget
+$load Targets, Barriers, Downstream, Root, TargetsBeneficiary, TargetsControl
+$load passBase, passChange, benefitMaxBase, benefitMaxChange, costBen, costPass
+$load budget, weight, cap
 $gdxin
 
 
 * CHECK DATA REQUIREMENTS
 
-parameter cntHabMag 'Barrier/Fish pairs for which ||habitat|| < ||habitatChange|| which would violate model assumptions.';
-cntHabMag = sum((J,F)$(abs(habitat(J,F)) < abs(habitatChange(J,F))), 1);
-if (cntHabMag > 0, abort 'Magnitude of baseline habitat values must be larger than magnitude of habitat change with action.');
+parameter cntHabMag 'Barrier/Fish pairs for which ||benefitMaxBase|| < ||benefitMaxChange|| which would violate model assumptions.';
+cntHabMag = sum((J,T)$(abs(benefitMaxBase(J,T)) < abs(benefitMaxChange(J,T))), 1);
+if (cntHabMag > 0, abort 'Magnitude of baseline benefitMaxBase values must be larger than magnitude of benefitMaxBase change with action.');
 
 
 
 * VARIABLE AND EQUATION DECLARATIONS
 free variable
-    totalHabitat 'total weighted habitat across target species for entire system',
-    cumPass(J,F) 'cumulative passability of barrier j for species f',
-    cumHabitat(J,F) 'amount of accessible, quality-adjusted habitat above barrier j for fish t';
+    totalBenefit 'total weighted benefit across targets for entire system',
+    cumPass(J,T) 'cumulative passability of barrier j for target t',
+    cumBenBar(J,T) 'accessibility-weighted benefit at barrier j for target t';
 positive variable
-    removalXcumPass(J,F) 'removalXcumPass(J) = removals(J)*cumPass(Downstream(J),F)',
-    controlXcumPass(J,F) 'controlXcumPass(J) = controls(J)*cumPass(J,F)';
+    actionPassXcumPass(J,T) 'actionPassXcumPass(J) = actionPass(J)*cumPass(Downstream(J),T)',
+    actionBenXcumPass(J,T) 'actionBenXcumPass(J) = actionBen(J)*cumPass(J,T)';
 binary variable
-    removals(J) 'remove barrier j: yes or no',
-    controls(J) 'control the control species above barrier j: yes or no';
+    actionPass(J) 'take action to change passability at j: yes or no',
+    actionBen(J) 'take action to change potential benefit above barrier j: yes or no';
 
     
 * EQUATION (MODEL) DEFINITION
 
 equations
-eq_objective 'first maximize restoration species habitat, secondarily minimize control species habitat',
-eq_cumHabitat(J,F) 'calculate cumHabitat(j,t)',
-eq_cumPass_root(J,F) 'calculate cumPass(j,t) at each root node',
-eq_cumPass_upstream(J,K,F) 'calculate cumPass(j,t) at each upstream node',
-cn_budget 'enforce habitat management budget constraint',
-cn_cap_CF(F) 'limit available habitat for control species',
-cn_cap_RF(F) 'enforce minimum habitat for restoration species',
-cn_controlXcumPass_controls(J,F) 'turn controlXcumPass "on" only when control is applied',
-cn_controlXcumPass_cumPass(J,F) 'set upper bound of controlXcumPass to cumPass(j,t)',
-cn_removalXcumPass_removals(J,F) 'turn removalXcumPass "on" only when barrier is removed',
-cn_removalXcumPass_cumPass(J,K,F) 'set upper bound of removalXcumPass to cumPass(Downstream(j),t)',
-cn_removalXcumPass_upstream(J,K,F) 'enforce lower bound on removalXcumPass at each upstream node for control species';
-*cn_controlXcumPass_equality(J,F) 'Check that controlXcumPass meets its equality constraint.';
+eq_objective 'first maximize beneficiary targets benefits, secondarily minimize control targets benefits',
+eq_cumBenBar(J,T) 'calculate cumBenBar(j,t)',
+eq_cumPass_root(J,T) 'calculate cumPass(j,t) at each root node',
+eq_cumPass_upstream(J,K,T) 'calculate cumPass(j,t) at each upstream node',
+cn_budget 'enforce budget constraint',
+cn_cap_TC(T) 'limit available accessibility-weighted benefit for control targets',
+cn_cap_TB(T) 'enforce minimum accessibility-weighted benefit for beneficiary targets',
+cn_actionBenXcumPass_actionBen(J,T) 'first part of probability chain to linearize actionBenXcumPass',
+cn_actionBenXcumPass_cumPass(J,T) 'second part of probability chain to linearize actionBenXcumPass',
+cn_actionPassXcumPass_actionPass(J,T) 'first part of probability chain to linearize actionPassXcumPass',
+cn_actionPassXcumPass_Root(J,T) 'first part of probability chain to linearize actionPassXcumPass',
+cn_actionPassXcumPass_cumPass(J,K,T) 'third part of probability chain to linearize actionPassXcumPass',
+cn_actionPassXcumPass_upstream(J,K,T) 'third part of probability chain to linearize actionPassXcumPass, specific for upstream nodes and control targets';
+*cn_controlXcumPass_equality(J,T) 'Check that actionBenXcumPass meets its equality constraint.';
 
 eq_objective..
-    totalHabitat =e= sum((J,RF), cumHabitat(J,RF)) - tradeoff * sum((J,CF), cumHabitat(J,CF));
+    totalBenefit =e= sum((J,TB), weight(TB)*cumBenBar(J,TB)) + obj2Weight*sum((J,TC), weight(TC)*cumBenBar(J,TC));
 
-eq_cumHabitat(J,F)..
-    cumHabitat(J,F) =e= habitat(J,F)*cumPass(J,F) + habitatChange(J,F)*controlXcumPass(J,F);
+eq_cumBenBar(J,T)..
+    cumBenBar(J,T) =e= benefitMaxBase(J,T)*cumPass(J,T) + benefitMaxChange(J,T)*actionBenXcumPass(J,T);
 
-eq_cumPass_root(J,F)$(Root(J))..
-    cumPass(J,F) =e= pass(J,F) + passChange(J,F)*removals(J);
+eq_cumPass_root(J,T)$(Root(J))..
+    cumPass(J,T) =e= passBase(J,T) + passChange(J,T)*actionPassXcumPass(J,T);
 
-eq_cumPass_upstream(J,K,F)$(not Root(J) and Downstream(J,K))..
-    cumPass(J,F) =e= pass(J,F)*cumPass(K,F) + passChange(J,F)*removalXcumPass(J,F);
+eq_cumPass_upstream(J,K,T)$(not Root(J) and Downstream(J,K))..
+    cumPass(J,T) =e= passBase(J,T)*cumPass(K,T) + passChange(J,T)*actionPassXcumPass(J,T);
 
 cn_budget..
-    sum(J, costRemoval(J)*removals(J) + costControl(J)*controls(J)) =l= budget;
+    sum(J, costPass(J)*actionPass(J) + costBen(J)*actionBen(J)) =l= budget;
 
-cn_cap_CF(F)$(ControlFishes(F))..
-    sum(J, cumHabitat(J,F)) =l= cap(F);
+cn_cap_TC(T)$(TargetsControl(T))..
+    sum(J, cumBenBar(J,T)) =l= cap(T);
 
-cn_cap_RF(F)$(RestorationFishes(F))..
-    sum(J, cumHabitat(J,F)) =g= cap(F);
+cn_cap_TB(T)$(TargetsBeneficiary(T))..
+    sum(J, cumBenBar(J,T)) =g= cap(T);
 
-cn_controlXcumPass_controls(J,F)..
-    controlXcumPass(J,F) =l= controls(J);
+cn_actionBenXcumPass_actionBen(J,T)..
+    actionBenXcumPass(J,T) =l= actionBen(J);
 
-cn_controlXcumPass_cumPass(J,F)..
-    controlXcumPass(J,F) =l= cumPass(J,F);
+cn_actionBenXcumPass_cumPass(J,T)..
+    actionBenXcumPass(J,T) =l= cumPass(J,T);
 
-cn_removalXcumPass_removals(J,F)..
-    removalXcumPass(J,F) =l= removals(J);
+cn_actionPassXcumPass_actionPass(J,T)..
+    actionPassXcumPass(J,T) =l= actionPass(J);
+    
+cn_actionPassXcumPass_Root(J,T)$(Root(J) and TargetsControl(T))..
+    actionPassXcumPass(J,T) =g= actionpass(J);
 
-cn_removalXcumPass_cumPass(J,K,F)$(not Root(J) and Downstream(J,K))..
-    removalXcumPass(J,F) =l= cumPass(K,F);
-
-cn_removalXcumPass_upstream(J,K,F)$((not Root(J)) and ControlFishes(F) and Downstream(J,K))..
-    removalXcumPass(J,F) =g= cumPass(K,F) + removals(J) - 1;
-
+cn_actionPassXcumPass_cumPass(J,K,T)$(not Root(J) and Downstream(J,K))..
+    actionPassXcumPass(J,T) =l= cumPass(K,T);
+    
+cn_actionPassXcumPass_upstream(J,K,T)$((not Root(J)) and TargetsControl(T) and Downstream(J,K))..
+    actionPassXcumPass(J,T) =g= cumPass(K,T) + actionPass(J) - 1;
+    
 * Checked by Austin Milt 11/05/2015 and does not change results (appears to not be necessary)    
-*cn_controlXcumPass_equality(J,F)..
-*    controlXcumPass(J,F) =g= cumPass(J,F) + controls(J) - 1;
+*cn_controlXcumPass_equality(J,T)..
+*    actionBenXcumPass(J,T) =g= cumPass(J,T) + actionBen(J) - 1;
 
 model fishHabitat /all/;
 
@@ -132,7 +138,7 @@ fishHabitat.holdfixed = 1;
 fishHabitat.limcol    = 0;
 fishHabitat.limrow    = 0;
 
-solve fishHabitat using mip max totalHabitat;
+solve fishHabitat using mip max totalBenefit;
 abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 
@@ -140,26 +146,26 @@ abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 parameter
     remainingBudget 'leftover budget',
-    speciesHabitat(F) 'total available habitat for target species';
+    speciesHabitat(T) 'total available benefitMaxBase for target species';
 sets
     toRemove(J) "Barriers that should be removed",
     toControl(J) "Barriers that should have control actions",
-    negHab(J,F) "Barrier/Fish pairs for which cumHabitat comes out negative which would require additional constraints";
+    negHab(J,T) "Barrier/Fish pairs for which cumBenBar comes out negative which would require additional constraints";
 
 
-removals.l(J) = round(removals.l(J));
-toRemove(J) = yes$(removals.l(J));
+actionPass.l(J) = round(actionPass.l(J));
+toRemove(J) = yes$(actionPass.l(J));
 
-controls.l(J) = round(controls.l(J));
-toControl(J) = yes$(controls.l(J));
+actionBen.l(J) = round(actionBen.l(J));
+toControl(J) = yes$(actionBen.l(J));
 
-negHab(J,F) = yes$(cumHabitat.l(J,F) < 0);
+negHab(J,T) = yes$(cumBenBar.l(J,T) < 0);
 
-remainingBudget = budget - sum(J, costRemoval(J)*removals.l(J) + costControl(J)*controls.l(J));
+remainingBudget = budget - sum(J, costBen(J)*actionBen.l(J) + costPass(J)*actionPass.l(J));
 
-speciesHabitat(F) = sum(J, cumHabitat.l(J,F));
+speciesHabitat(T) = sum(J, cumBenBar.l(J,T));
 
-display totalHabitat.l;
+display totalBenefit.l;
 option toRemove:0:0:2;
 display toRemove;
 option toControl:0:0:2;
