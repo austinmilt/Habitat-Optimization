@@ -12,18 +12,21 @@ $if not set inputfile $set inputfile 'data.gdx'
 sets
     Targets(*) 'set of targets to be affected by project actions',
     Barriers(*) 'set of candidate dams/road culverts for removal/upgrade (by ID number)'
-    Projects(*) 'projects that can be done to affect barrier passability or upstream benefit potential';
+    Projects(*) 'projects that can be done to affect barrier passability or upstream benefit potential'
+    BudgetNames(*) 'spending budgets from which projects can draw money';
 alias
     (Targets,T),
     (Barriers,J,K),
-    (Projects,P);
+    (Projects,P),
+    (BudgetNames,B);
 sets
     Downstream(J,K) 'K is the barrier immediately downstream from J; used for tracing upstream/downstream effects of actions',
     Root(J) 'root nodes of river-system (barriers with no downstream node)',
     TargetsBeneficiary(T) 'set of beneficiary targets',
     TargetsControl(T) 'set of targets to reduce/control',
     ProjectsBenefit(P) 'projects that affect potential benefit',
-    ProjectsPassability(P) 'projects that affect barrier passability';
+    ProjectsPassability(P) 'projects that affect barrier passability',
+    ProjectToBudget(P,B) 'budget from which project draws money';
 alias
     (TargetsBeneficiary, TB),
     (TargetsControl, TC);
@@ -34,18 +37,18 @@ parameter
     benefitMaxChange(J,P,T) 'change in potential quality-adjusted benefit in area j for target t from doing project p',
     cost(J,P) 'cost of doing project p at barrier J',
     cap(T) 'max (min) allowed accessibility-weighted benefit for TargetsControl (TargetsBeneficiary)',
-    weight(T) 'weight/priority of target t';
+    weight(T) 'weight/priority of target t',
+    budget(B) 'budget amounts from which projects draw money';
 scalar
-    budget 'management budget (barrier passability + potential benefit actions)',
     obj2Weight 'weight on secondary objective (here to do with control targets)' / 1e-3 /;
 
 
 * LOAD MODEL DATA
 $GDXIN %inputfile%
 $load Targets, Barriers, Downstream, Root, TargetsBeneficiary, TargetsControl
-$load Projects, ProjectsPassability, ProjectsBenefit
+$load Projects, ProjectsPassability, ProjectsBenefit, Budgets
 $load passBase, passChange, benefitMaxBase, benefitMaxChange, cost
-$load budget, weight, cap
+$load budget, weight, cap, ProjectToBudget
 $gdxin
 
 
@@ -81,7 +84,7 @@ eq_objective 'first maximize beneficiary targets benefits, secondarily minimize 
 eq_cumBenBar(J,T) 'calculate cumBenBar(j,t)',
 eq_cumPass_root(J,T) 'calculate cumPass(j,t) at each root node',
 eq_cumPass_upstream(J,K,T) 'calculate cumPass(j,t) at each upstream node',
-cn_budget 'enforce budget constraint',
+cn_budget(B) 'enforce budget constraints',
 cn_cap_TC(T) 'limit available accessibility-weighted benefit for control targets',
 cn_cap_TB(T) 'enforce minimum accessibility-weighted benefit for beneficiary targets',
 cn_action_benXcumPass_actionBen(J,P,T) 'first part of probability chain to linearize action_benXcumPass',
@@ -104,8 +107,8 @@ eq_cumPass_root(J,T)$(Root(J))..
 eq_cumPass_upstream(J,K,T)$(not Root(J) and Downstream(J,K))..
     cumPass(J,T) =e= passBase(J,T)*cumPass(K,T) + sum(P$(ProjectsPassability(P)), passChange(J,P,T)*action_passXcumPass(J,P,T));
 
-cn_budget..
-    sum((J,P), cost(J,P)*actions(J,P)) =l= budget;
+cn_budget(B)..
+    sum((J,P)$B, cost(J,P)*actions(J,P)) =l= budget(B);
 
 cn_cap_TC(T)$(TargetsControl(T))..
     sum(J, cumBenBar(J,T)) =l= cap(T);
@@ -153,7 +156,7 @@ abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 * DISPLAY SUMMARY RESULTS
 
 parameter
-    remainingBudget 'leftover budget',
+    remainingBudget(B) 'leftover budget',
     speciesHabitat(T) 'total available benefitMaxBase for target species';
 sets
     doActions(J,P) "Barriers that should be removed",
@@ -166,7 +169,7 @@ doActions(J,P) = yes$(actions.l(J,P));
 
 negHab(J,T) = yes$(cumBenBar.l(J,T) < 0);
 
-remainingBudget = budget - sum((J,P), cost(J,P)*actions.l(J,P));
+remainingBudget(B) = budget(B) - sum((J,P)$B, cost(J,P)*actions.l(J,P));
 
 speciesHabitat(T) = sum(J, cumBenBar.l(J,T));
 
