@@ -1,201 +1,644 @@
-### DOCUMENTATION
+# Created 02/15/2016
+# Updated 02/15/2016
+# Author: Austin Milt
+# ArcGIS version: 10.3.1
+# Python version: 2.7.8
+# Description:
+#       This script's main purpose is to convert barrier optimization data from
+#   one format into a (or series of) GDX(s) that is used by the habitat
+#   optimization GAMS model. It is designed to be as general as possible in
+#   terms of the naming conventions in both the gms model and input data.
+#       This script also includes a somewhat dataset-specific function, 
+#   prune_barriers(), which removes rows of the input barrier data that will
+#   not be relevant for any optimization. At the time of writing this
+#   description (02/15/2016), the only criterion on which this pruning is based 
+#   is whether a barrier is part of the network of barriers to which candidate
+#   barriers  belong.
+#       Generally users should only need to change the options defined in the
+#   very bottom section starting with if __name__ == '___main__':. Really,
+#   users shouldnt need to change anything. Less frequently, the defaults
+#   defined at the top of this script may be changed. Very rarely, hopefully
+#   never, would interal function constants need to be changed.
 
-def main():
-    # see Habitat_Opt.gms for descriptions
-    
-    import csv, gams
-    
-    # ~~ VARIABLE AND COLUMN NAME DECLARATIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-    
-    # GAMS model variables/parameters
-    benefitMaxBase = 'benefitMaxBase'
-    benefitMaxChange = 'benefitMaxChange'
-    passBase = 'passBase'
-    passChange = 'passChange'
-    barriers = 'Barriers'
-    roots = 'Root'
-    goals = 'Targets'
-    beneficiaries = 'TargetsBeneficiary'
-    controls = 'TargetsControl'
-    budget = 'budget'
-    caps = 'cap'
-    costs = 'cost'
-    downstream = 'Downstream'
-    projects = 'Projects'
-    projectsPass = 'ProjectsPassability'
-    projectsBen = 'ProjectsBenefit'
-    weight = 'weight'
-    # dummy = 'Dummy'
-    
-    # excel CSV columns (more below in column mapping section)
-    barrierIDName = 'BID' # csv column name for Barriers set 
-    downstreamIDName = 'DSID' # csv column name for down-stream ID D(J)
-    removalCostName = 'COST' # csv column name for cR(J)
-    lampCostName = 'HABCOST' # csv column name for lampricide treatment cH(J)
-    
-    
+# parameters that need special exceptions in processing
+EXC_BAR_NAM = 'Barriers' # on which rows in table are based
 
-    # ~~ PARAMETER AND SET DEFINITIONS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+# read_gms()
+GMS_KWD_SET = 'set'
+GMS_KWD_ALS = 'alias'
+GMS_KWD_PAR = 'parameter'
+GMS_KWD_SCA = 'scalar'
+GMS_KWD_OPN = '('
+GMS_KWD_CLS = ')'
+GMS_KWD_SEP = ','
+GMS_KWD_END = ';'
+GMS_KWD_WLD = '*'
+GMS_KWD_LOD = '$load'
+GMS_KWD_STR = "'"
+GMS_TYP = {GMS_KWD_SET: str, GMS_KWD_PAR: float, GMS_KWD_SCA: float}
+
+# load_data()
+LOD_KWD_RUN = 'Run'
+LOD_KWD_PAR = 'Parameter'
+LOD_KWD_VAL = 'Values'
+LOD_KWD_SEP = ','
+LOD_KWD_OPN = '('
+LOD_KWD_CLS = ')'
+
+# prune_barriers()
+PRN_DEF_CAN = None
+PRN_DEF_RUT = '-1'
+PRN_TRU = {
+        '0': False, '1': True, 'true': True, 'false': False, 'no': False, 
+        'yes': True, 'n': False, 'y': True
+}
+
+
     
-    b = 5e5
-    Targets = ['Fish1', 'Fish2', 'Fish3', 'Lamprey']
-    beneficiariesT = ['Fish1', 'Fish2', 'Fish3']
-    controlsT = ['Lamprey']
-    capT = {'Fish1': 0, 'Fish2': 0, 'Fish3': 0, 'Lamprey': float('inf')}
-    weightT = {'Fish1': 1, 'Fish2': 1, 'Fish3': 1, 'Lamprey': -1}
-    removalName = 'remove' # barrier removal project
-    lampricideName = 'lampricide' # lampricide application project
-    projectTypes = {removalName: projectsPass, lampricideName: projectsBen}
-    lampricideEfficiency = -0.95 # proportion of lamprey increased by lampricide (negative values reduce lamprey)
-    # dummyBarrierName = 'DUMMYBARRIER'
+# ~~ PARAMETER ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+class Parameter:
+
+    import numpy
     
-    # dataFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\Test Results\barriers.csv'
-    dataFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\OHanley Generic\OPL code\Catchment624777.csv'
-    outputFile = r'C:\Users\milt\Dropbox\UW Madison Post Doc\Lamprey Control\code\data.gdx'
-    
-    # mapping from project names to project costs
-    project2Cost = {
-        lampricideName: lampCostName, removalName: removalCostName
-    }
-    
-    
-    # ~~ EXCEL COLUMN MAPPINGS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-    
-    # mapping for target species to their column definitions in the csv
-    #   Level 1: Target Names
-    #       Level 2: Parameter Name and Column Name
-    targetMap = {
-        'Fish1': {
-            benefitMaxBase: 'USHAB1',
-            passBase: 'PASS04',
-            passChange: 'DELTAPASS1',
-            benefitMaxChange: 'DELTAHAB1'
-        },
+    def __init__(self, name, indices=[], description='', loadname=''):
+        self.name = name
+        self.indices = indices
+        self.ndim = len(indices)
+        self.external = False
+        self.loadname = loadname
+        self.description = description
+        self.dtype = GMS_TYP[self.__class__.__name__.lower()]
+        self.data = {}
         
-        'Fish2': {
-            benefitMaxBase: 'USHAB2',
-            passBase: 'PASS07',
-            passChange: 'DELTAPASS2',
-            benefitMaxChange: 'DELTAHAB2'
-        },
         
-        'Fish3': {
-            benefitMaxBase: 'USHAB3',
-            passBase: 'PASS10',
-            passChange: 'DELTAPASS3',
-            benefitMaxChange: 'DELTAHAB3'
-        },
+    def __setattr__(self, attr, value):
+    
+        # type validation
+        if attr == 'name': assert isinstance(value, (str, unicode)), 'Invalide type'
+        elif attr == 'ndim': assert isinstance(value, (int, long)), 'Invalide type'
+        elif attr == 'indices': assert isinstance(value, (list, tuple, set)), 'Invalide type'
+        elif attr == 'external': assert isinstance(value, (bool, int)), 'Invalide type'
+        elif attr == 'loadname': assert isinstance(value, (str, unicode)), 'Invalide type'
+        elif attr == 'description': assert isinstance(value, (str, unicode)), 'Invalide type'
         
-        'Lamprey': {
-            benefitMaxBase: 'USHAB4',
-            passBase: 'PASS_LAMP',
-            passChange: 'DELTAPASS4',
-            benefitMaxChange: 'DELTAHAB4'
-        }
-    }
+        # update value
+        self.__dict__[attr] = value
+        
+        # auto-update of ndim
+        if attr == 'indices': self.ndim = len(self.indices)
+        
+    def __repr__(self):
+        return '%s <%s>' % (self.__class__.__name__, self.name)
+
+
+# ~~ SET ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #        
+class Set(Parameter):
+    def __init__(*inputs):
+        Parameter.__init__(*inputs)
+
+# ~~ SCALAR ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+class Scalar(Parameter):
+    def __init__(*inputs):
+        Parameter.__init__(*inputs)
+
+        
+# ~~ read_gms() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def read_gms(gmsFile):
+    """
+    READ_GMS() loads parameters from a GAMS model file to specify necessary
+    inputs from user specified data.
     
-    # column data types
-    col2Type = {
-        barrierIDName: str, downstreamIDName: str, removalCostName: float, 
-        lampCostName: float
-    }
-    for target in targetMap:
-        col2Type.update(dict((v, float) for v in targetMap[target].values()))
+    INPUTS:
+        gmsFile     = path to the GAMS model file
+        
+    OUTPUTS:
+        dictionary of parameters/sets/aliases/scalars
+    """
+    with open(gmsFile, 'r') as fh:
+    
+        parameters = {}
+        externalParameters = set()
+        for line in fh:
+            stripLine = line.strip()
+            
+            # find sets (assumes one set per line after keyword)
+            if stripLine.startswith(GMS_KWD_SET):
+                while True:
+                    
+                    # process the current set
+                    newLine = fh.next().strip()
+                    if newLine == '': continue
+                    setName, remainder = newLine.split(GMS_KWD_OPN, 1)
+                    setIndices = [s.strip() for s in remainder.split(GMS_KWD_CLS)[0].split(GMS_KWD_SEP)]
+                    parameters[setName] = Set(setName, setIndices)
+                    
+                    # check if this is the last line of sets
+                    if newLine.endswith(GMS_KWD_END): break
+                    
+            # find aliases
+            elif stripLine.startswith(GMS_KWD_ALS):
+                while True:
+                    
+                    # process current alias
+                    newLine = fh.next().strip()
+                    if newLine == '': continue
+                    nameStr = newLine.split(GMS_KWD_OPN, 1)[1].rsplit(GMS_KWD_CLS, 1)[0]
+                    names = [s.strip() for s in nameStr.split(GMS_KWD_SEP)]
+                    for alias in names[1:]:
+                        parameters[alias] = parameters[names[0]]
+                    
+                    # check if this is the last line of sets
+                    if newLine.endswith(GMS_KWD_END): break
+                    
+            # find parameters
+            elif stripLine.startswith(GMS_KWD_PAR):
+                while True:
+                
+                    # process the current parameter
+                    newLine = fh.next().strip()
+                    if newLine == '': continue
+                    paramStr, remainder = newLine.split(' ', 1)
+                    if GMS_KWD_OPN not in paramStr: # zero dimension parameters
+                        parameters[paramStr] = Parameter(paramStr, [])
+                        
+                    else: # other parameters
+                        paramName, remainder = paramStr.split(GMS_KWD_OPN, 1)
+                        paramIndices = [s.strip() for s in remainder.split(GMS_KWD_CLS)[0].split(GMS_KWD_SEP)]
+                        parameters[paramName] = Parameter(paramName, paramIndices)
+                    
+                    # check if this is the last line of parameters
+                    if newLine.endswith(GMS_KWD_END): break
+                    
+            # find scalars
+            elif stripLine.startswith(GMS_KWD_SCA):
+                while True:
+                
+                    # process the current scalar
+                    newLine = fh.next().strip()
+                    if newLine == '': continue
+                    scalarName = newLine.split()[0]
+                    parameters[scalarName] = Scalar(scalarName)
+                    
+                    # check if this is the last line of scalars
+                    if newLine.endswith(GMS_KWD_END): break
+                    
+                    
+            # find which parameters are to be loaded from gdx (assumes that
+            #   $load statement comes only after $GDXIN)
+            elif stripLine.startswith(GMS_KWD_LOD):
+                _, remainder = stripLine.split(' ', 1)
+                externalParameters.update([s.strip() for s in remainder.split(GMS_KWD_SEP)])
+                
+    # define externality of parameters
+    for parameter in parameters:
+        if parameter in externalParameters:
+            parameters[parameter].external = True
+            parameters[parameter].loadname = parameter
+        
+    return parameters
     
     
     
-    # ~~ READ CSV ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+# ~~ prune_barriers() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def prune_barriers(
+    tableFile, outputFile, bidColumn, downstreamColumn, **options
+):
+    """
+    PRUNE_BARRIERS() does pre-processing of barrier data to remove any barriers
+    that would not be involved in the optimization
     
-    csvH = csv.reader(open(dataFile, 'r'))
-    columns = csvH.next()
-    nCol = len(columns)
+    INPUTS:
+        tableFile       = path to the (CSV) table dataset file, where rows are
+            individual barriers and columns are barrier data/attributes
+            
+        outputFile      = path where the output file should be saved
+        
+        bidColumn      = name of the column in [tableFile] that records a
+            barrier's unique ID
+        
+        downstreamColumn= name of the column in [tableFile] that records the
+            downstream barrier ID of a barrier
+            
+        ** options  = (optional) keyword arguments, including:
+        
+            candidate_columns: list of columns in [tableFile] that denote
+                which barriers rows are candidates for different projects.
+                Specify None to indicate all barriers are candidates. If this
+                is done, no pruning will occur based on barriers being
+                in the same network as candidates. Default is PRN_DEF_CAN (
+                see top of script containing this function)
+                
+            root_value: downstream ID value in [downstreamColumn] to indicate
+                a barrier is a root (i.e. has no downstream barriers). Default
+                is PRN_DEF_RUT
+        
+    OUTPUTS:
+        path to [outputFile]
+    """
     
-    # get column indices in the csv that should be kept and exported
-    keepCols = set([i for i in xrange(nCol) if columns[i] in col2Type])
+    # imports
+    import csv
     
-    # get mapping from column name to index in processed data array
-    cI = {}
-    i = 0
-    for c in columns:
-        if c in col2Type:
-            cI[c] = i
-            i += 1
+    # update options
+    P = {'candidate_columns': PRN_DEF_CAN, 'root_value': PRN_DEF_RUT}
+    for k in options:
+        if k.lower() in P: P[k.lower()] = options[k]
+    if not isinstance(P['candidate_columns'], (list, tuple, set)):
+        P['candidate_columns'] = [P['candidate_columns']]
+        
+    # short function to test a barrier is a candidate
+    candidate = lambda x: any([PRN_TRU[v.lower()] for v in x])
     
+    # load data
+    reader = csv.reader(open(tableFile, 'r'))
+    columns = reader.next()
+    c2I = dict((columns[i], i) for i in xrange(len(columns)))
+    data = dict((row[c2I[bidColumn]], row) for row in reader)
+    
+    # take care of the easy case (no candidate columns given)
+    if P['candidate_columns'][0] is None:
+        writer = csv.writer(open(outputFile, 'w'))
+        writer.writerow(columns)
+        for row in data.values(): writer.writerow(row)
+        print 'Pruned 0 rows'
+        return outputFile
+        
+    # go through each barrier and determine if it belongs to the network
+    #   of candidate barriers by tracing downstream
+    networkBarriers = set()
+    for bid in data:
+        
+        # case 1: this barrier has already been added to the network
+        #   of candidates
+        if bid in networkBarriers: continue
+        
+        # case 2: this barrier or one of its downstream barriers is a candidate
+        current = bid
+        breakFlag = False
+        while current <> P['root_value']:
+            if candidate([data[current][c2I[k]] for k in P['candidate_columns']]):
+                breakFlag = True
+                
+                # trace downstream, adding all downstream barriers to the
+                #   network until we reach the first that has already been
+                #   added (all subsequent barriers will have already been
+                #   added)
+                current = bid
+                while current <> P['root_value']:
+                    if current in networkBarriers: break
+                    networkBarriers.add(current)
+                    current = data[current][c2I[downstreamColumn]]
+            
+            # update for the next round of searching for a candidate
+            if breakFlag: break
+            else: current = data[current][c2I[downstreamColumn]]
+
+    print 'Pruned %i rows' % (len(data.keys()) - len(networkBarriers))
+                
+    # write the output file
+    writer = csv.writer(open(outputFile, 'w'))
+    writer.writerow(columns)
+    for bid in networkBarriers:
+        writer.writerow(data[bid])
+        
+    return outputFile
+
+
+    
+# ~~ load_data() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def load_data(tableFile, settingsFile, parameters):    
+    """
+    LOAD_DATA() loads input data and formats it for creation of a gdx.
+    
+    INPUTS:
+        tableFile       = Excel CSV spreadsheet where each row is a barrier and 
+            columns are barrier attribute data
+            
+        settingsFile    = Excel CSV file with parameters not indexed by barrier 
+            and column designations in tableFile. Required columns are 
+                LOD_KWD_RUN (see top of Python script): run integer number
+                LOD_KWD_PAR: parameter name and defined indices (see Notes)
+                LOD_KWD_VAL: defined values or column designation for this
+                    dimension of the parameter (see Notes)
+                    
+    OUTPUTS:
+        dictionary of parameters with data, formatted for make_gdx()
+        
+    NOTES:
+        o An example of a row in the settingsFile that indicates a set defined
+          in the settingsFile
+          
+            "1","TargetsBeneficiary(Targets)","Fish1,Fish2,Fish3"
+            
+          where elements are separated by commas, elements are surrounded by
+          double quotes, the first element is the run number, the second
+          element is the parameter name with parentheses around the 
+          index (or comma-separated list of indices) defined in the third
+          element which is the comma-separated (or single-value) list of
+          values for the Targets dimension of TargestBeneficiary
+            
+        o An example of a row in the settingsFile that defines a Parameter
+          defined in tableFile
+          
+            "1","passChange(Barriers,removal,Fish1)","DELTAPASS1"
+            
+          where generally syntax matches above, but the third element now
+          indicates the column in tableFile from which the passChange
+          parameter for removal and Fish1, indexed by Barriers should
+          be taken.
+          
+        o In the input settingsFile, the order of indices defined for a
+          parameter must match the ordering in the GAMS model. Currently
+          this function does not rigorously check for compatibility
+    """
+    
+    # imports
+    import csv
+    
+    # barrier aliases for tracking which data come from data table
+    barrierAliases = set([k for k in parameters if parameters[k] is parameters[EXC_BAR_NAM]])
+    
+    # string conversions to different information for parameters
+    def str2run(string):
+        return int(string.strip())
+        
+    def str2values(string):
+        values = string.strip().split(LOD_KWD_SEP)
+        if len(values) == 1: return values[0]
+        else: return values
+        
+    def str2param(string):
+        if LOD_KWD_OPN not in string: return (string.strip(), [None])
+        paramName, remainder = string.strip().split(LOD_KWD_OPN, 1)
+        indices = [s.strip() for s in remainder.rsplit(LOD_KWD_CLS, 1)[0].split(LOD_KWD_SEP)]
+        return (paramName, indices)
+    
+    # read in data from definitions file
+    reader = csv.reader(open(settingsFile, 'r'))
+    columns = reader.next()
+    c2I = dict((columns[i], i) for i in xrange(len(columns)))
     data = []
-    for inRow in csvH:
+    inTable = set() # keep track of which data need to be pulled from table
+    i = 0
+    data2Param = {} # keep track of which indices in data[] belong to which parameter
+    for row in reader:
+        
+        # get information on this parameter
+        run = str2run(row[c2I[LOD_KWD_RUN]])
+        parameter, indices = str2param(row[c2I[LOD_KWD_PAR]])
+        values = str2values(row[c2I[LOD_KWD_VAL]])
+        
+        # add info to intermediate dict
+        if parameter not in data2Param: data2Param[parameter] = []
+        data2Param[parameter].append(i)
+        data.append([run, parameter, indices, values, []])
+        if len(barrierAliases.intersection(indices)) > 0: inTable.add(i)
+        elif len(barrierAliases.intersection([parameter])) > 0: inTable.add(i)
+        i += 1
+        
+    # read in data from table file based on definitions
+    reader = csv.reader(open(tableFile, 'r'))
+    columns = reader.next()
+    c2I = dict((columns[i], i) for i in xrange(len(columns)))
+    for row in reader:
+        for i in inTable:
+            entryColumn = data[i][3]
+            value = row[c2I[entryColumn]]
+            data[i][4].append(value)
+
+    # add data to parameter objects, converting to the proper data format
+    #   as we go
+    outParams = {}
+    for paramKey in parameters:
+        if not parameters[paramKey].external: continue
+        
+        # find a parameter key from parameters dict that matches something
+        #   in the data files
+        aliases = [k for k in parameters if parameters[k] is parameters[paramKey]]
+        paramName = [row[1] for row in data if row[1] in aliases][0]
+        
+        # process one dimension of the data for the current parameter
+        dataIndices = data2Param[paramName]
+        pParent = parameters[paramName]
+        outParams[paramName] = {}
+        for i in dataIndices:
+            run, _, subIndices, valOrCol, noneOrVal = data[i]
+            
+            # create new parameter to store data in based on parameter
+            #   from read_gms()
+            if run not in outParams[paramName]:
+                outParams[paramName][run] = pParent.__class__(
+                    pParent.name, pParent.indices, pParent.description, 
+                    pParent.loadname
+                )
+            parameter = outParams[paramName][run]
+            
+            # convert values to correct format
+            if len(noneOrVal) == 0: values = valOrCol
+            else: values = noneOrVal
+            if isinstance(values, (list, tuple)):
+                values = [parameter.dtype(s) for s in values]
+            else: values = parameter.dtype(values)
+                
+            # add data to parameter data dictionary
+            subdict = parameter.data
+            for j in xrange(parameter.ndim-1):
+                index = subIndices[j]
+                if index not in subdict: subdict[index] = {}
+                subdict = subdict[index]
+            if subIndices[-1] is None: parameter.data = values
+            else: subdict[subIndices[-1]] = values
+            
+        # update all aliases as well
+        for k in aliases: outParams[k] = outParams[paramName]
+
+    return outParams
     
-        # add each element to the output array in its final format if that
-        #   column is meant to be added to the output (as defined in col2Type)
-        outRow = [col2Type[columns[i]](inRow[i]) for i in xrange(nCol) if i in keepCols]
-        data.append(outRow)
+    
+    
+# ~~ make_gdx() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def make_gdx(data, outputDirectory, gdxFormatStr='data_run_%i'):
+    """
+    MAKE_GDX() uses data loaded by load_data() to make gdx gams databases
+    for individual model runs.
+    
+    INPUTS:
+        data                = data dictionary as returned by load_data()
+        outputDirectory     = directory where gdx's should be saved
+        gdxFormatStr        = (optional) formatting string for gdx file names,
+            without the extension, and must include '%i'
+    
+    OUTPUTS:
+        list of paths to the saved gdx files
+    """
+    
+    import gams, os
+
+    # get list of indices for run identities and for keeping track of which
+    #   run should be the default to draw settings from
+    runIndices = set()
+    for k in data:
+        runIndices.update(data[k].keys())
+    defRun = min(runIndices)
+    
+    # dictionary traversion for traversing over parameter definitions
+    #   dictionary and getting all values
+    class Node:
+        def __init__(self, nodeData, key=None, parent=None):
+            self.parent = parent
+            self.children = []
+            self.key = key
+            if isinstance(nodeData, dict):
+                for k in nodeData:
+                    self.children.append(Node(nodeData[k], k, self))
+            else:
+                self.children.append(nodeData)
+                
+        def trace_up(self):
+            keys = []
+            cur = self
+            while cur.parent is not None:
+                keys.append(cur.key)
+                cur = cur.parent
+            return keys[::-1]
         
-        
+        def traverse(self):
+            stack = [self]
+            while len(stack) > 0:
+                cur = stack.pop()
+                for child in cur.children:
+                    if isinstance(child, Node):
+                        stack.append(child)
+                    else:
+                        yield (cur.trace_up(), child)
+            
+
+            
     # ~~ MAKE GDX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-    
-    workspace = gams.GamsWorkspace()
-    database = workspace.add_database()
-    
-    # declarations
-    dbVars = {
-        budget: database.add_parameter(budget, 0),
-        benefitMaxBase: database.add_parameter(benefitMaxBase, 2),
-        benefitMaxChange: database.add_parameter(benefitMaxChange, 3),
-        passBase: database.add_parameter(passBase, 2),
-        passChange: database.add_parameter(passChange, 3),
-        barriers: database.add_set(barriers, 1),
-        roots: database.add_set(roots, 1),
-        goals: database.add_set(goals, 1),
-        beneficiaries: database.add_set(beneficiaries, 1),
-        controls: database.add_set(controls, 1),
-        caps: database.add_parameter(caps, 1),
-        costs: database.add_parameter(costs, 2),
-        downstream: database.add_set(downstream, 2),
-        weight: database.add_parameter(weight, 1),
-        projects: database.add_parameter(projects, 1),
-        projectsPass: database.add_parameter(projectsPass, 1),
-        projectsBen: database.add_parameter(projectsBen, 1),
-        # dummy: database.add_parameter(dummy, 1)
-    }
-    
-    # simple definitions
-    dbVars[budget].add_record().value = b
-    # dbVars[dummy].add_record(dummyBarrierName)
-    # dbVars[barriers].add_record(dummyBarrierName)
-    for x in Targets: dbVars[goals].add_record(x)
-    for x in beneficiariesT: dbVars[beneficiaries].add_record(x)
-    for x in controlsT: dbVars[controls].add_record(x)
-    for x in capT: dbVars[caps].add_record(x).value = capT[x]
-    for x in weightT: dbVars[weight].add_record(x).value = weightT[x]
-    for x in projectTypes:
-        dbVars[projects].add_record(x)
-        if projectTypes[x] == projectsPass: dbVars[projectsPass].add_record(x)
-        elif projectTypes[x] == projectsBen: dbVars[projectsBen].add_record(x)
-    
-    # definitions coming from rows of data[]
-    for row in data:
+    outfiles = []
+    for run in sorted(runIndices):
         
-        barrierID = row[cI[barrierIDName]]
-        dbVars[barriers].add_record(barrierID)
-        dbVars[benefitMaxChange].add_record((barrierID, lampricideName, 'Lamprey')).value = row[cI[targetMap['Lamprey'][benefitMaxChange]]]
+        workspace = gams.GamsWorkspace()
+        database = workspace.add_database()
         
-        if row[cI[downstreamIDName]] == '-1': # self is root
-            # dbVars[downstream].add_record((barrierID, dummyBarrierName))
-            dbVars[roots].add_record(barrierID)
+        # add parameters to the database
+        dbVars = {}
+        for pName in data:
+        
+            # initialize the parameter in the database
+            try: parameter = data[pName][run]
+            except KeyError: parameter = data[pName][defRun]
+            if pName <> parameter.loadname: continue # avoid duplicate entries for aliases
+            if isinstance(parameter, Set): 
+                dbVars[pName] = database.add_set(parameter.name, parameter.ndim)
+            elif isinstance(parameter, (Parameter, Scalar)): 
+                dbVars[pName] = database.add_parameter(parameter.name, parameter.ndim)
             
-        else: # has a downstream node
-            dbVars[downstream].add_record((barrierID, row[cI[downstreamIDName]]))
             
-        for t in Targets:
-            dbVars[benefitMaxBase].add_record((barrierID, t)).value = row[cI[targetMap[t][benefitMaxBase]]]
-            dbVars[passBase].add_record((barrierID, t)).value = row[cI[targetMap[t][passBase]]]
-            dbVars[passChange].add_record((barrierID, removalName, t)).value = row[cI[targetMap[t][passChange]]]
-            
-        for v in projectTypes:
-            dbVars[costs].add_record((barrierID, v)).value = row[cI[project2Cost[v]]]
-        
-        
-    database.export(outputFile)
+            # loop over parameter data, adding records to the database as we go
+            node = Node(parameter.data)
+            for indices, values in node.traverse():
+                
+                # for parameters with multiple values, add each record
+                #   individually
+                if isinstance(values, (list, tuple, set)):
+                
+                    # for one-dimensional parameters (Sets only)
+                    if (parameter.ndim == 1) and isinstance(parameter, Set):
+                        for v in values:
+                            dbVars[parameter.name].add_record(v)
+                    
+                    # for multi-dimensional Sets and Parameters
+                    else:
+                    
+                        # get the individual indices for the set over which records
+                        #   have been defined
+                        for i in xrange(len(indices)):
+                            index = indices[i]
+                            if index in data:
+                                try: indexParameter = data[index][run]
+                                except KeyError: indexParameter = data[index][defRun]
+                                break
+                                
+                        # add values individually
+                        for j in xrange(len(values)):
+                            
+                            # define the set of indices specific to this entry
+                            index = indexParameter.data[j]
+                            valueIndices = [x for x in indices]
+                            valueIndices[i] = index
+                            
+                            # add the entry to the database
+                            v = values[j]
+                            if isinstance(parameter, Set):
+                                dbVars[parameter.name].add_record(valueIndices[:-1] + [v])
+                            else:
+                                dbVars[parameter.name].add_record(valueIndices).value = v
+
+                # for Sets not fitting in above
+                elif isinstance(parameter, Set):
+                
+                    # 1-dimensional Sets where the set elements are defined as
+                    #   values, but only a single element was given
+                    if parameter.ndim == 1:
+                        dbVars[parameter.name].add_record(values)
+                        
+                    # Sets with multiple dimensions and explicit indices that
+                    #   dont have multiple values
+                    else:
+                        dbVars[parameter.name].add_record(indices)
+                                
+                # for zero-dimensional parameters for which we add a single
+                #   value
+                elif parameter.ndim == 0:
+                    dbVars[parameter.name].add_record().value = values
+                    
+                # for 1+ dimensional values that are explicitly indexed
+                else:
+                    dbVars[parameter.name].add_record(indices).value = values
+                    
+        # write the gdx for this run    
+        outfile = os.path.join(outputDirectory, gdxFormatStr % run)
+        database.export(outfile)
+        outfiles.append(outfile)
+
+    return outfiles
     
     
 if __name__ == '__main__':
-    print main()
+
+    # module imports
+    import os
+    
+    # input files and params (assumed to be in the same directory as this script)
+    thisFolder = os.path.dirname(os.path.abspath(__file__))
+    gmsFile = os.path.join(thisFolder, 'Habitat_Opt.gms')
+    tableFile = os.path.join(thisFolder, 'table.csv')
+    defFile = os.path.join(thisFolder, 'definitions.csv')
+    candidateColumns = ('can remove', 'can treat')
+    bidColumn = 'BID'
+    dsidColumn = 'DSID'
+    
+    # load the gams parameter definitions from the gams model file
+    gamsParameters = read_gms(gmsFile)
+    
+    # prune barrier rows in the table file that wont make a difference in any
+    #   optimization runs (i.e. that arent part of the network of candidates)
+    tableDir, tableName = os.path.split(tableFile)
+    tempTable = os.path.join(tableDir, '_' + tableName)
+    try: 
+        _ = prune_barriers(
+            tableFile, tempTable, bidColumn, dsidColumn, 
+            candidate_columns=candidateColumns
+        )
+    
+        # load the data from tables and definitions file
+        data = load_data(tempTable, defFile, gamsParameters)
+        
+        # make the gdx's for every model run
+        print '\n'.join(make_gdx(data, thisFolder))
+        
+    finally:
+        try: os.remove(tempTable)
+        except:
+            print 'Could not delete temporary pruned data %s' % tempTable
