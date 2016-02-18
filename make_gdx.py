@@ -1,5 +1,5 @@
 # Created 02/15/2016
-# Updated 02/15/2016
+# Updated 02/18/2016
 # Author: Austin Milt
 # ArcGIS version: 10.3.1
 # Python version: 2.7.8
@@ -44,6 +44,7 @@ LOD_KWD_VAL = 'Values'
 LOD_KWD_SEP = ','
 LOD_KWD_OPN = '('
 LOD_KWD_CLS = ')'
+LOD_DEF_RUN = 1 
 
 # prune_barriers()
 PRN_DEF_CAN = None
@@ -52,6 +53,10 @@ PRN_TRU = {
         '0': False, '1': True, 'true': True, 'false': False, 'no': False, 
         'yes': True, 'n': False, 'y': True
 }
+
+# make_gdx()
+MAK_ZIP = '.zip'
+MAK_GDX = '.gdx'
 
 
     
@@ -380,11 +385,19 @@ def load_data(tableFile, settingsFile, parameters):
     data = []
     inTable = set() # keep track of which data need to be pulled from table
     i = 0
+    r = 0
     data2Param = {} # keep track of which indices in data[] belong to which parameter
     for row in reader:
         
         # get information on this parameter
-        run = str2run(row[c2I[LOD_KWD_RUN]])
+        r += 1
+        try: run = str2run(row[c2I[LOD_KWD_RUN]])
+        except ValueError:
+            msg = ''.join([
+                'Invalid value on row %i in definitions file. Be sure to ' % r,
+                'delete blank rows.'
+            ])
+            raise ValueError(msg)
         parameter, indices = str2param(row[c2I[LOD_KWD_PAR]])
         values = str2values(row[c2I[LOD_KWD_VAL]])
         
@@ -415,7 +428,9 @@ def load_data(tableFile, settingsFile, parameters):
         # find a parameter key from parameters dict that matches something
         #   in the data files
         aliases = [k for k in parameters if parameters[k] is parameters[paramKey]]
-        paramName = [row[1] for row in data if row[1] in aliases][0]
+        paramNames = [row[1] for row in data if row[1] in aliases]
+        if len(paramNames) > 0: paramName = paramNames[0]
+        else: continue
         
         # process one dimension of the data for the current parameter
         dataIndices = data2Param[paramName]
@@ -457,7 +472,10 @@ def load_data(tableFile, settingsFile, parameters):
     
     
 # ~~ make_gdx() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def make_gdx(data, outputDirectory, gdxFormatStr='data_run_%i'):
+def make_gdx(
+    data, outputDirectory, gdxFormatStr='data_run_%i', parameters=None,
+    zip=False
+):
     """
     MAKE_GDX() uses data loaded by load_data() to make gdx gams databases
     for individual model runs.
@@ -467,12 +485,20 @@ def make_gdx(data, outputDirectory, gdxFormatStr='data_run_%i'):
         outputDirectory     = directory where gdx's should be saved
         gdxFormatStr        = (optional) formatting string for gdx file names,
             without the extension, and must include '%i'
+        parameters          = (optional) GMS model parameters as returned by
+            read_gms(). If supplied, this function will attempt to fill inany
+            missing, necessary data definitions not in data{} with empty
+            data expected by GAMS. Default is None, which will result in this
+            being skipped and probable failure of GAMS execution when data
+            are missing.
+        zip                 = (optional) if True, each output GDX is zipped
+            to reduce file size. Default is False
     
     OUTPUTS:
         list of paths to the saved gdx files
     """
     
-    import gams, os
+    import gams, os, zipfile
 
     # get list of indices for run identities and for keeping track of which
     #   run should be the default to draw settings from
@@ -597,9 +623,35 @@ def make_gdx(data, outputDirectory, gdxFormatStr='data_run_%i'):
                 else:
                     dbVars[parameter.name].add_record(indices).value = values
                     
+        
+        # add empty parameters for data not supplied by the user
+        if parameters is not None:
+            for pName in parameters:
+                parameter = parameters[pName]
+                if parameter.external and (parameter.loadname not in dbVars):
+                    if isinstance(parameter, Set): 
+                        dbVars[pName] = database.add_set(parameter.loadname, parameter.ndim)
+                    elif isinstance(parameter, (Parameter, Scalar)): 
+                        dbVars[pName] = database.add_parameter(parameter.loadname, parameter.ndim)
+            
+                    
         # write the gdx for this run    
-        outfile = os.path.join(outputDirectory, gdxFormatStr % run)
-        database.export(outfile)
+        outname = os.path.join(outputDirectory, gdxFormatStr % run)
+        database.export(outname)
+        if zip:
+        
+            # compress to zip
+            outfile = outname + MAK_ZIP
+            outgdx = outname + MAK_GDX
+            zh = zipfile.ZipFile(outfile, "w")
+            zh.write(outgdx, os.path.basename(outgdx), zipfile.ZIP_DEFLATED)
+            zh.close()
+            
+            # delete the gdx
+            try: os.remove(outgdx)
+            except: print 'WARNING: Could not delete %s.' % outgdx
+            
+        else: outfile = outname + MAK_GDX
         outfiles.append(outfile)
 
     return outfiles
@@ -636,7 +688,7 @@ if __name__ == '__main__':
         data = load_data(tempTable, defFile, gamsParameters)
         
         # make the gdx's for every model run
-        print '\n'.join(make_gdx(data, thisFolder))
+        print '\n'.join(make_gdx(data, thisFolder, parameters=gamsParameters))
         
     finally:
         try: os.remove(tempTable)
