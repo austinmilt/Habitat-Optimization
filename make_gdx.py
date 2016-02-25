@@ -474,7 +474,7 @@ def load_data(tableFile, settingsFile, parameters):
 # ~~ make_gdx() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def make_gdx(
     data, outputDirectory, gdxFormatStr='data_run_%i', parameters=None,
-    zip=False
+    zip=False, skip=True
 ):
     """
     MAKE_GDX() uses data loaded by load_data() to make gdx gams databases
@@ -493,13 +493,16 @@ def make_gdx(
             are missing.
         zip                 = (optional) if True, each output GDX is zipped
             to reduce file size. Default is False
+        skip                = (optional) if True, skips runs for which a file
+            already exists that matches the output file name (could be .zip or
+            .gdx). Default is True
     
     OUTPUTS:
         list of paths to the saved gdx files
     """
     
-    import gams, os, zipfile
-
+    import os, zipfile, gams
+    
     # get list of indices for run identities and for keeping track of which
     #   run should be the default to draw settings from
     runIndices = set()
@@ -509,7 +512,7 @@ def make_gdx(
     
     # dictionary traversion for traversing over parameter definitions
     #   dictionary and getting all values
-    class Node:
+    class Node(object):
         def __init__(self, nodeData, key=None, parent=None):
             self.parent = parent
             self.children = []
@@ -542,12 +545,23 @@ def make_gdx(
             
     # ~~ MAKE GDX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
     outfiles = []
+    workspace = gams.GamsWorkspace()
     for run in sorted(runIndices):
-        
-        workspace = gams.GamsWorkspace()
-        database = workspace.add_database()
+    
+        # check if this run gdx already exists, and skip if it does
+        if skip:
+            outname = os.path.join(outputDirectory, gdxFormatStr % run)
+            if zip: outfile = outname + MAK_ZIP
+            else: outfile = outname + MAK_GDX
+            if os.path.exists(outfile):
+                print ''.join((
+                    'WARNING: Found GDX for Run %i. Skipping creation. ' % run,
+                    'To avoid this, set skip=False'
+                ))
+                continue
         
         # add parameters to the database
+        database = workspace.add_database()
         dbVars = {}
         for pName in data:
         
@@ -637,7 +651,10 @@ def make_gdx(
                     
         # write the gdx for this run    
         outname = os.path.join(outputDirectory, gdxFormatStr % run)
-        database.export(outname)
+        try: database.export(outname)
+        except: 
+            print 'Unable to create GDX file %s' % outname
+            
         if zip:
         
             # compress to zip
@@ -650,10 +667,16 @@ def make_gdx(
             # delete the gdx
             try: os.remove(outgdx)
             except: print 'WARNING: Could not delete %s.' % outgdx
-            
+        
         else: outfile = outname + MAK_GDX
+        print 'Completed %s...' % outname
         outfiles.append(outfile)
-
+        
+        # try to clear up some memory to prolong the GAMS memory leak failure
+        database.clear()
+        del database
+        
+        
     return outfiles
     
     
