@@ -18,11 +18,19 @@ INP_KWD_LVL = 'level'
 OUT_KWD_PAR = 'symbol'
 OUT_KWD_VAL = 'value'
 OUT_KWD_DIM = 'd%i'
+OUT_KWD_FIL = 'file'
 
+# ~~ make_header ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def make_header(ndim):
+    """Short function shared between functions here to make file headers."""
+    return [OUT_KWD_PAR] + [OUT_KWD_DIM % i for i in range(ndim)] + [OUT_KWD_VAL]
+    
 
 # ~~ gdx_to_csv() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def gdx_to_csv(inGDX, outCSV):
     """
+    GDX_TO_CSV() converts a GDX to CSV
+    
     INPUTS:
         inGDX   = absolute path to input GDX from which CSV should be made
         outCSV  = absolute path of output CSV to write
@@ -38,7 +46,7 @@ def gdx_to_csv(inGDX, outCSV):
     """
     
     # IMPORTS
-    import gams
+    import gams, csv
     
     
     # LOAD DATA
@@ -59,27 +67,76 @@ def gdx_to_csv(inGDX, outCSV):
             # some records have a 'value' while others have a 'level',
             #   both of which are the value. So take either one if it
             #   has it.
-            if hasattr(record, 'value'): row[-1] = str(record.value)
-            elif hasattr(record, 'level'): row[-1] = str(record.level)
+            if hasattr(record, INP_KWD_VAL): row[-1] = str(record.value)
+            elif hasattr(record, INP_KWD_LVL): row[-1] = str(record.level)
             data.append(row)
             
     # WRITE OUTPUT
-    with open(outCSV, 'w') as fh:
-    
-        # write the header
-        headerList = ['parameter']
-        headerList.extend(['d%i' % i for i in xrange(maxDim)])
-        headerList.append('value')
-        fh.write(','.join(headerList))
-        
-        # write the rows of output data
-        for row in data:
-            fh.write('\n' + ','.join(row))
+    writer = csv.writer(open(outCSV, 'wb'))
+    header = make_header(maxDim)
+    writer.writerow(header)
+    for row in data: writer.writerow(row)
             
     # FINISH
     return outCSV
     
     
+# ~~ concatenate_csvs() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+def concatenate_csvs(csvs, outCSV):
+    """
+    CONCATENATE_CSVS() concatenates multiple CSVs as returned by gdx_to_csv()
+    into a single file
+    
+    INPUTS:
+        csvs    = paths to csvs to be concatenated
+        outCSV  = path to output CSV to create
+    
+    OUTPUTS:
+        outCSV, which will have the same format as returned by gdx_to_csv(),
+        but with an extra column denoting the filename from which the results
+        were taken.
+        
+    NOTES:
+        o if csvs[] contains multiple files with the same file name, you will
+          not be able to distinguish between them in the output
+    """
+    
+    # imports
+    import csv, os
+    
+    # read csvs
+    names = set()
+    data = []
+    maxDim = 0
+    for csvFile in csvs:
+    
+        # check for duplicate names
+        csvName = os.path.splitext(os.path.basename(csvFile))[0]
+        if csvName in names:
+            print ''.join(
+                'WARNING: Found duplicate name %s. ' % csvName,
+                'You will not be able to distinguish multiple results because ',
+                'of this.'
+            )
+        names.add(csvName)
+        
+        # get data from the file
+        reader = csv.reader(open(csvFile, 'r'))
+        maxDim = max(maxDim, len(reader.next())-2)
+        data.extend([[csvName] + row for row in reader])
+        
+    # write output csv
+    writer = csv.writer(open(outCSV, 'wb'))
+    header = [OUT_KWD_FIL] + make_header(maxDim)
+    writer.writerow(header)
+    for row in data:
+        nExtraDim = maxDim-len(row)
+        outRow = row[:-1] + ['' for i in range(nExtraDim)] + [row[-1]]
+        writer.writerow(outRow)
+        
+    return outCSV
+    
+        
 if __name__ == '__main__':
 
     import os
