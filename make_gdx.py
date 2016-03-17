@@ -1,5 +1,5 @@
 # Created 02/15/2016
-# Updated 02/18/2016
+# Updated 02/25/2016
 # Author: Austin Milt
 # ArcGIS version: 10.3.1
 # Python version: 2.7.8
@@ -473,18 +473,21 @@ def load_data(tableFile, settingsFile, parameters):
     
 # ~~ make_gdx() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def make_gdx(
-    data, outputDirectory, gdxFormatStr='data_run_%i', parameters=None,
-    zip=False, skip=True
+    data, outputDirectory, defGDXName='data_all', runGDXStr='data_run_%i',
+    parameters=None, zip=False, skip=False
 ):
     """
     MAKE_GDX() uses data loaded by load_data() to make gdx gams databases
-    for individual model runs.
+    for individual model runs, where there is one gdx shared across all runs
+    and a series of gdx's, one for each run
     
     INPUTS:
         data                = data dictionary as returned by load_data()
         outputDirectory     = directory where gdx's should be saved
-        gdxFormatStr        = (optional) formatting string for gdx file names,
-            without the extension, and must include '%i'
+        defGDXName          = (optional) name of the GDX to be created that 
+            contains data not changing across runs
+        runGDXStr           = (optional) formatting string for run-specific gdx
+            file names, without the extension, and must include '%i'
         parameters          = (optional) GMS model parameters as returned by
             read_gms(). If supplied, this function will attempt to fill inany
             missing, necessary data definitions not in data{} with empty
@@ -495,20 +498,13 @@ def make_gdx(
             to reduce file size. Default is False
         skip                = (optional) if True, skips runs for which a file
             already exists that matches the output file name (could be .zip or
-            .gdx). Default is True
+            .gdx). Default is False
     
     OUTPUTS:
         list of paths to the saved gdx files
     """
     
     import os, zipfile, gams
-    
-    # get list of indices for run identities and for keeping track of which
-    #   run should be the default to draw settings from
-    runIndices = set()
-    for k in data:
-        runIndices.update(data[k].keys())
-    defRun = min(runIndices)
     
     # dictionary traversion for traversing over parameter definitions
     #   dictionary and getting all values
@@ -540,17 +536,28 @@ def make_gdx(
                         stack.append(child)
                     else:
                         yield (cur.trace_up(), child)
-            
+                        
+    # get list of indices for run identities and for keeping track of which
+    #   run should be the default to draw settings from
+    runIndices = set()
+    for k in data:
+        runIndices.update(data[k].keys())
+    defRun = min(runIndices)
+    runIndices = [-1] + sorted(runIndices) # append one for the default gdx
+    
+    # get list of parameters that dont change across runs so we know which to
+    #   put in default vs run-specific gdxs
+    parDefOnly = set([k for k in data if len(data[k]) == 1])
 
             
-    # ~~ MAKE GDX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+    # ~~ MAKE GDXS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
     outfiles = []
-    workspace = gams.GamsWorkspace()
-    for run in sorted(runIndices):
+    for run in runIndices:
     
         # check if this run gdx already exists, and skip if it does
         if skip:
-            outname = os.path.join(outputDirectory, gdxFormatStr % run)
+            if run == -1: outname = os.path.join(outputDirectory, defGDXName)
+            else: outname = os.path.join(outputDirectory, runGDXStr % run)
             if zip: outfile = outname + MAK_ZIP
             else: outfile = outname + MAK_GDX
             if os.path.exists(outfile):
@@ -561,19 +568,26 @@ def make_gdx(
                 continue
         
         # add parameters to the database
+        workspace = gams.GamsWorkspace()
         database = workspace.add_database()
         dbVars = {}
         for pName in data:
         
             # initialize the parameter in the database
-            try: parameter = data[pName][run]
-            except KeyError: parameter = data[pName][defRun]
+            if run == -1: parameter = data[pName][defRun]
+            else:
+                try: parameter = data[pName][run]
+                except KeyError: parameter = data[pName][defRun]
             if pName <> parameter.loadname: continue # avoid duplicate entries for aliases
             if isinstance(parameter, Set): 
                 dbVars[pName] = database.add_set(parameter.name, parameter.ndim)
             elif isinstance(parameter, (Parameter, Scalar)): 
                 dbVars[pName] = database.add_parameter(parameter.name, parameter.ndim)
-            
+                
+            # for the default gdx, skip parameters that will be in the run-specific gdxs
+            #   and vice-versa for run-specific gdxs
+            if (run == -1) and (pName not in parDefOnly): continue
+            elif (run <> -1) and (pName in parDefOnly): continue
             
             # loop over parameter data, adding records to the database as we go
             node = Node(parameter.data)
@@ -596,8 +610,10 @@ def make_gdx(
                         for i in xrange(len(indices)):
                             index = indices[i]
                             if index in data:
-                                try: indexParameter = data[index][run]
-                                except KeyError: indexParameter = data[index][defRun]
+                                if run == -1: indexParameter = data[index][defRun]
+                                else:
+                                    try: indexParameter = data[index][run]
+                                    except KeyError: indexParameter = data[index][defRun]
                                 break
                                 
                         # add values individually
@@ -650,7 +666,8 @@ def make_gdx(
             
                     
         # write the gdx for this run    
-        outname = os.path.join(outputDirectory, gdxFormatStr % run)
+        if run == -1: outname = os.path.join(outputDirectory, defGDXName)
+        else: outname = os.path.join(outputDirectory, runGDXStr % run)
         try: database.export(outname)
         except: 
             print 'Unable to create GDX file %s' % outname
@@ -672,9 +689,9 @@ def make_gdx(
         print 'Completed %s...' % outname
         outfiles.append(outfile)
         
-        # try to clear up some memory to prolong the GAMS memory leak failure
+        # try to clear up some memory
         database.clear()
-        del database
+        del database, workspace
         
         
     return outfiles

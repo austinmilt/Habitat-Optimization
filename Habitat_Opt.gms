@@ -5,7 +5,8 @@ $title Habitat Optimization with Generic Barrier or Habitat Actions (Fishworks v
 * DEFINE COMMAND-LINE OPTIONS
 
 * input gdx
-$if not set inputfile $set inputfile 'data_run_1.gdx'
+$if not set defaultgdx $set defaultgdx 'data_all.gdx'
+$if not set rungdx $set rungdx 'data_run.gdx'
 
 
 * SETS AND DEFINITIONS
@@ -48,11 +49,18 @@ scalar
 
 
 * LOAD MODEL DATA
-$GDXIN %inputfile%
+$GDXIN %defaultgdx%
 $load Targets, Barriers, Downstream, TargetsBeneficiary
 $load TargetsControl, Projects, ProjectsPassability, ProjectsBenefit
 $load BudgetNames, passBase, passChange, benefitMaxBase, benefitMaxChange, cost
 $load budget, weight, cap, ProjectToBudget, obj2Weight,  isCandidate, isRoot
+$gdxin
+
+$GDXIN %rungdx%
+$loadm Targets, Barriers, Downstream, TargetsBeneficiary
+$loadm TargetsControl, Projects, ProjectsPassability, ProjectsBenefit
+$loadm BudgetNames, passBase, passChange, benefitMaxBase, benefitMaxChange, cost
+$loadm budget, weight, cap, ProjectToBudget, obj2Weight,  isCandidate, isRoot
 $gdxin
 
 
@@ -203,6 +211,6 @@ display negHab;
 
 
 * WRITE OUTPUT GDX
-Execute_Unload 'results', 
+Execute_Unload 'results',
     totalBenefit.l=objective, doActions=actions, speciesHabitat=target_benefits,
     remainingBudget=remaining_budget, negHab=negative_benefits;
