@@ -1,5 +1,5 @@
 # Created 02/15/2016
-# Updated 02/25/2016
+# Updated 03/17/2016
 # Author: Austin Milt
 # ArcGIS version: 10.3.1
 # Python version: 2.7.8
@@ -57,6 +57,10 @@ PRN_TRU = {
 # make_gdx()
 MAK_ZIP = '.zip'
 MAK_GDX = '.gdx'
+MAK_DEF_DDN = 'data_all'
+MAK_DEF_RDN = 'data_run'
+MAK_DEF_ZIP = False
+MAK_DEF_SKP = False
 
 
     
@@ -473,8 +477,8 @@ def load_data(tableFile, settingsFile, parameters):
     
 # ~~ make_gdx() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def make_gdx(
-    data, outputDirectory, defGDXName='data_all', runGDXStr='data_run_%i',
-    parameters=None, zip=False, skip=False
+    data, outputDirectory, defGDXName=MAK_DEF_DDN, runGDXPref=MAK_DEF_RDN,
+    parameters=None, zip=MAK_DEF_ZIP, skip=MAK_DEF_SKP
 ):
     """
     MAKE_GDX() uses data loaded by load_data() to make gdx gams databases
@@ -485,9 +489,11 @@ def make_gdx(
         data                = data dictionary as returned by load_data()
         outputDirectory     = directory where gdx's should be saved
         defGDXName          = (optional) name of the GDX to be created that 
-            contains data not changing across runs
-        runGDXStr           = (optional) formatting string for run-specific gdx
-            file names, without the extension, and must include '%i'
+            contains data not changing across runs. Default is MAK_DEF_DDN
+            (see top of script for constants)
+        runGDXPref          = (optional) name prefixfor run-specific gdx file
+            names, without the extension. The run number is appended to each file
+            name. Default is MAK_DEF_RDN.
         parameters          = (optional) GMS model parameters as returned by
             read_gms(). If supplied, this function will attempt to fill inany
             missing, necessary data definitions not in data{} with empty
@@ -495,10 +501,10 @@ def make_gdx(
             being skipped and probable failure of GAMS execution when data
             are missing.
         zip                 = (optional) if True, each output GDX is zipped
-            to reduce file size. Default is False
+            to reduce file size. Default is MAK_DEF_ZIP.
         skip                = (optional) if True, skips runs for which a file
             already exists that matches the output file name (could be .zip or
-            .gdx). Default is False
+            .gdx). Default is MAK_DEF_SKP
     
     OUTPUTS:
         list of paths to the saved gdx files
@@ -547,7 +553,12 @@ def make_gdx(
     
     # get list of parameters that dont change across runs so we know which to
     #   put in default vs run-specific gdxs
-    parDefOnly = set([k for k in data if len(data[k]) == 1])
+    #   NOTE: Because GAMS gives zero-dimensional parameters (scalars) a value
+    #   of zero (rather than empty), do not include those in this list.
+    parDefOnly = set()
+    for k in data:
+        if (len(data[k]) == 1) and (data[k][data[k].keys()[0]].ndim <> 0):
+            parDefOnly.add(k)
 
             
     # ~~ MAKE GDXS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -557,7 +568,7 @@ def make_gdx(
         # check if this run gdx already exists, and skip if it does
         if skip:
             if run == -1: outname = os.path.join(outputDirectory, defGDXName)
-            else: outname = os.path.join(outputDirectory, runGDXStr % run)
+            else: outname = os.path.join(outputDirectory, '%s%i' % (runGDXPref, run))
             if zip: outfile = outname + MAK_ZIP
             else: outfile = outname + MAK_GDX
             if os.path.exists(outfile):
@@ -667,7 +678,7 @@ def make_gdx(
                     
         # write the gdx for this run    
         if run == -1: outname = os.path.join(outputDirectory, defGDXName)
-        else: outname = os.path.join(outputDirectory, runGDXStr % run)
+        else: outname = os.path.join(outputDirectory, '%s%i' % (runGDXPref, run))
         try: database.export(outname)
         except: 
             print 'Unable to create GDX file %s' % outname
@@ -705,8 +716,8 @@ if __name__ == '__main__':
     # input files and params (assumed to be in the same directory as this script)
     thisFolder = os.path.dirname(os.path.abspath(__file__))
     gmsFile = os.path.join(thisFolder, 'Habitat_Opt.gms')
-    tableFile = os.path.join(thisFolder, 'table.csv')
-    defFile = os.path.join(thisFolder, 'definitions.csv')
+    tableFile = os.path.join(thisFolder, r'test_data\table.csv')
+    defFile = os.path.join(thisFolder, r'test_data\definitions.csv')
     candidateColumns = ('can remove', 'can treat')
     bidColumn = 'BID'
     dsidColumn = 'DSID'
