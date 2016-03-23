@@ -31,7 +31,7 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     # imports
     from glob import glob
     from gdx_to_csv import gdx_to_csv
-    import os, gams, shutil
+    import os, shutil, subprocess
     
     # get input gdxs and identify default gdx
     defGDXs = glob(os.path.join(indir, defGDXStr + '*%s' % RUN_EXT_GDX))
@@ -39,16 +39,11 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     defGDX = defGDXs[0]
     runGDXs = glob(os.path.join(indir, runGDXStr + '*%s' % RUN_EXT_GDX))
     
-    # set up for runs by creating GAMS workspace, making directories, etc
+    # set up for runs
     thisdir = os.path.abspath(os.path.dirname(__file__))
-    workspace = gams.GamsWorkspace(thisdir)
-    job = workspace.add_job_from_file(RUN_GMS)
-    gamsDefGDX = os.path.join(thisdir, RUN_GDF)
-    gamsRunGDX = os.path.join(thisdir, RUN_GRF)
-    gamsOutGDX = os.path.join(workspace.working_directory, RUN_GOF)
+    gamsOutGDX = os.path.join(thisdir, RUN_GOF)
     if not os.path.exists(outdir): os.makedirs(outdir)
-    shutil.copy2(defGDX, gamsDefGDX)
-    tempFiles = set([gamsDefGDX])
+    tempFiles = set()
     
     try:
         
@@ -56,12 +51,10 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
         outfiles = []
         for gdx in runGDXs:
             
-            # copy run files to correct location
-            shutil.copy2(gdx, gamsRunGDX)
-            tempFiles.add(gamsRunGDX)
-            
             # run the model
-            job.run(create_out_db=False)
+            subprocess.call(
+                'gams %s --defaultgdx "%s" --rungdx "%s"' % (RUN_GMS, defGDX, gdx)
+            )
             
             # convert results to CSV
             outCSV = os.path.join(outdir, os.path.basename(gdx).split('.', 1)[0] + RUN_EXT_CSV)
@@ -81,4 +74,7 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
 if __name__ == '__main__':
     import os
     thisdir = os.path.abspath(os.path.dirname(__file__))
-    print run(os.path.join(thisdir,'test_data'), os.path.join(thisdir,'test_results'))
+    print run(
+        os.path.join(thisdir,'test_data'), 
+        os.path.join(thisdir,'test_results')
+    )
