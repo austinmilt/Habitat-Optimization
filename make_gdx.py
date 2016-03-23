@@ -39,12 +39,19 @@ GMS_TYP = {GMS_KWD_SET: str, GMS_KWD_PAR: float, GMS_KWD_SCA: float}
 
 # load_data()
 LOD_KWD_RUN = 'Run'
-LOD_KWD_PAR = 'Parameter'
+LOD_KWD_PAR = 'Symbol'
 LOD_KWD_VAL = 'Values'
+LOD_KWD_VIC = 'Values is Column Name'
 LOD_KWD_SEP = ','
 LOD_KWD_OPN = '('
 LOD_KWD_CLS = ')'
+LOD_KWD_SRC = {
+    'y': True, 'yes': True, 'n': False, 'no': False, 't': True, 'f': False, 
+    'true': True, 'false': False, '1': True, '0': False
+}
+LOD_KWD_RDF = ''
 LOD_DEF_RUN = 1 
+
 
 # prune_barriers()
 PRN_DEF_CAN = None
@@ -61,6 +68,7 @@ MAK_DEF_DDN = 'data_all'
 MAK_DEF_RDN = 'data_run'
 MAK_DEF_ZIP = False
 MAK_DEF_SKP = False
+MAK_KWD_RDF = 'None'
 
 
     
@@ -325,10 +333,14 @@ def load_data(tableFile, settingsFile, parameters):
             
         settingsFile    = Excel CSV file with parameters not indexed by barrier 
             and column designations in tableFile. Required columns are 
-                LOD_KWD_RUN (see top of Python script): run integer number
+                LOD_KWD_RUN (see top of Python script): run integer number. If
+                    no number is given, the parameter is assumed a default
+                    value to be used when missing from subsequent runs.
                 LOD_KWD_PAR: parameter name and defined indices (see Notes)
                 LOD_KWD_VAL: defined values or column designation for this
                     dimension of the parameter (see Notes)
+                    
+        parameters      = parameter dictionary as returned by read_gms()
                     
     OUTPUTS:
         dictionary of parameters with data, formatted for make_gdx()
@@ -369,7 +381,9 @@ def load_data(tableFile, settingsFile, parameters):
     
     # string conversions to different information for parameters
     def str2run(string):
-        return int(string.strip())
+        s = string.strip()
+        if s == LOD_KWD_RDF: return MAK_KWD_RDF
+        else: return int(s)
         
     def str2values(string):
         values = string.strip().split(LOD_KWD_SEP)
@@ -381,6 +395,10 @@ def load_data(tableFile, settingsFile, parameters):
         paramName, remainder = string.strip().split(LOD_KWD_OPN, 1)
         indices = [s.strip() for s in remainder.rsplit(LOD_KWD_CLS, 1)[0].split(LOD_KWD_SEP)]
         return (paramName, indices)
+        
+    # test for whether a symbol is table.csv or definitions.csv sourced
+    def is_table_sourced(string):
+        return LOD_KWD_SRC.get(string.lower(), None)
     
     # read in data from definitions file
     reader = csv.reader(open(settingsFile, 'r'))
@@ -389,8 +407,13 @@ def load_data(tableFile, settingsFile, parameters):
     data = []
     inTable = set() # keep track of which data need to be pulled from table
     i = 0
-    r = 0
+    r = 1
+    duplicateCheck = set()
     data2Param = {} # keep track of which indices in data[] belong to which parameter
+    srcErrStr = ''.join([
+        'User specified that the %s column for %s is not a ',
+        'column name in the table CSV but %s appears as an index.'
+    ])
     for row in reader:
         
         # get information on this parameter
@@ -405,12 +428,32 @@ def load_data(tableFile, settingsFile, parameters):
         parameter, indices = str2param(row[c2I[LOD_KWD_PAR]])
         values = str2values(row[c2I[LOD_KWD_VAL]])
         
-        # add info to intermediate dict
+        # check if this is a duplicate of another row (same parameter/run)
+        #   combo defined twice
+        duplicateTup = (run, parameter, str(indices))
+        if duplicateTup in duplicateCheck:
+            msg = ''.join([
+                'Repeat combinations of run + symbol + indices not allowed. ',
+                'Check row %i.' % r
+            ])
+            raise ValueError(msg)
+        else: duplicateCheck.add(duplicateTup)
+        
+        # add info to intermediate dict created before the final output
+        #   dictionary of loaded data
         if parameter not in data2Param: data2Param[parameter] = []
         data2Param[parameter].append(i)
         data.append([run, parameter, indices, values, []])
-        if len(barrierAliases.intersection(indices)) > 0: inTable.add(i)
-        elif len(barrierAliases.intersection([parameter])) > 0: inTable.add(i)
+        if len(barrierAliases.intersection(indices)) > 0:
+            if not is_table_sourced(row[c2I[LOD_KWD_VIC]]):
+                err = srcErrStr % (LOD_KWD_VAL, row[c2I[LOD_KWD_PAR]], EXC_BAR_NAM)
+                raise AssertionError(err)
+            inTable.add(i)
+        elif len(barrierAliases.intersection([parameter])) > 0:
+            if not is_table_sourced(row[c2I[LOD_KWD_VIC]]):
+                err = srcErrStr % (LOD_KWD_VAL, row[c2I[LOD_KWD_PAR]], EXC_BAR_NAM)
+                raise AssertionError(err)
+            inTable.add(i)
         i += 1
         
     # read in data from table file based on definitions
@@ -543,12 +586,19 @@ def make_gdx(
                     else:
                         yield (cur.trace_up(), child)
                         
-    # get list of indices for run identities and for keeping track of which
-    #   run should be the default to draw settings from
+    # get list of indices for run identities
     runIndices = set()
     for k in data:
         runIndices.update(data[k].keys())
-    defRun = min(runIndices)
+    try:
+        runIndices.remove(MAK_KWD_RDF)
+        defRun = MAK_KWD_RDF
+    except KeyError:
+        defRun = min(runIndices)
+        print ''.join((
+            'Could not find the default run index %s. ' % str(MAK_KWD_RDF),
+            'Assuming default values should be taken from run %i.' % defRun
+        ))
     runIndices = [-1] + sorted(runIndices) # append one for the default gdx
     
     # get list of parameters that dont change across runs so we know which to
@@ -603,6 +653,24 @@ def make_gdx(
             # loop over parameter data, adding records to the database as we go
             node = Node(parameter.data)
             for indices, values in node.traverse():
+            
+                # check that indices are elements of sets (or are themselves
+                #   sets) that have been defined
+                if isinstance(parameter.data, dict):
+                    for i in xrange(parameter.ndim):
+                        index = indices[i]
+                        if index not in data: # skip indices that are sets
+                            indexSet = data[parameter.indices[i]].get(
+                                run, data[parameter.indices[i]][defRun]
+                            )
+                            setElements = indexSet.data
+                            if index not in indexSet.data:
+                                msg = ''.join((
+                                    'Supplied index \'%s\' for run ' % index,
+                                    '%s, symbol \'%s\', but ' % (str(run), pName),
+                                    '\'%s\' is not a member of \'%s\'.' % (index, indexSet.name)
+                                ))
+                                raise ValueError(msg)
                 
                 # for parameters with multiple values, add each record
                 #   individually
@@ -718,6 +786,7 @@ if __name__ == '__main__':
     gmsFile = os.path.join(thisFolder, 'Habitat_Opt.gms')
     tableFile = os.path.join(thisFolder, r'test_data\table.csv')
     defFile = os.path.join(thisFolder, r'test_data\definitions.csv')
+    outFolder = os.path.join(thisFolder, 'test_data')
     candidateColumns = ('can remove', 'can treat')
     bidColumn = 'BID'
     dsidColumn = 'DSID'
@@ -739,7 +808,7 @@ if __name__ == '__main__':
         data = load_data(tempTable, defFile, gamsParameters)
         
         # make the gdx's for every model run
-        print '\n'.join(make_gdx(data, thisFolder, parameters=gamsParameters))
+        print '\n'.join(make_gdx(data, outFolder, parameters=gamsParameters))
         
     finally:
         try: os.remove(tempTable)
