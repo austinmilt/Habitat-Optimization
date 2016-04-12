@@ -10,15 +10,14 @@ RUN_GOF = 'results.gdx'
 
 
 # ~~ run() ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
+def run(indir, outfile, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     """
     RUN() runs a series of GAMS models, substituting the current run GDX in
     each run and outputting the results to a CSV.
     
     INPUTS:
         indir       = directory where GDXs are stored
-        outdir      = directory where GDXs should be saved. If it doesnt exist
-            it will be created
+        outfile     = output summary CSV to be created
         defGDXStr   = (optional) name (without extension) of default GDX in
             [workingDir]. Default is take from make_gdx
         runGDXStr   = (optional) name prefix (without extension) of
@@ -30,7 +29,7 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     
     # imports
     from glob import glob
-    from gdx_to_csv import gdx_to_csv
+    from gdx_to_csv import gdx_to_csv, concatenate_csvs
     import os, shutil, subprocess
     
     # get input gdxs and identify default gdx
@@ -42,13 +41,12 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     # set up for runs
     thisdir = os.path.abspath(os.path.dirname(__file__))
     gamsOutGDX = os.path.join(thisdir, RUN_GOF)
-    if not os.path.exists(outdir): os.makedirs(outdir)
     tempFiles = set()
     
     try:
         
         # run GAMS and output results
-        outfiles = []
+        csvs = []
         for gdx in runGDXs:
             
             # run the model
@@ -57,12 +55,15 @@ def run(indir, outdir, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
             )
             
             # convert results to CSV
-            outCSV = os.path.join(outdir, os.path.basename(gdx).split('.', 1)[0] + RUN_EXT_CSV)
+            outCSV = os.path.join(thisdir, os.path.basename(gdx).split('.', 1)[0] + RUN_EXT_CSV)
             gdx_to_csv(gamsOutGDX, outCSV)
             tempFiles.add(gamsOutGDX)
-            outfiles.append(outCSV)
+            tempFiles.add(outCSV)
+            csvs.append(outCSV)
             
-        return outfiles
+        # concatenate csvs
+        concatenate_csvs(csvs, outfile)
+        return outfile
             
     # delete temporary files
     finally:
