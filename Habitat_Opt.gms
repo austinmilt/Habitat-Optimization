@@ -50,17 +50,25 @@ scalar
 
 * LOAD MODEL DATA
 $GDXIN %defaultgdx%
-$load Targets, Barriers, Downstream, TargetsBeneficiary
-$load TargetsControl, Projects, ProjectsPassability, ProjectsBenefit
-$load BudgetNames, passBase, passChange, benefitMaxBase, benefitMaxChange, cost
-$load budget, weight, cap, ProjectToBudget, obj2Weight,  isCandidate, isRoot
+$load Targets, Barriers, Projects, BudgetNames
 $gdxin
 
 $GDXIN %rungdx%
-$loadm Targets, Barriers, Downstream, TargetsBeneficiary
-$loadm TargetsControl, Projects, ProjectsPassability, ProjectsBenefit
-$loadm BudgetNames, passBase, passChange, benefitMaxBase, benefitMaxChange, cost
-$loadm budget, weight, cap, ProjectToBudget, obj2Weight,  isCandidate, isRoot
+$loadm Targets, Barriers, Projects, BudgetNames
+$gdxin
+
+$GDXIN %defaultgdx%
+$load Downstream, TargetsBeneficiary, TargetsControl, ProjectsPassability
+$load ProjectsBenefit, passBase, passChange, benefitMaxBase
+$load benefitMaxChange, cost, budget, weight, cap, ProjectToBUdget, obj2Weight
+$load isCandidate, isRoot
+$gdxin
+
+$GDXIN %rungdx%
+$loadm Downstream, TargetsBeneficiary, TargetsControl, ProjectsPassability
+$loadm ProjectsBenefit, passBase, passChange, benefitMaxBase
+$loadm benefitMaxChange, cost, budget, weight, cap, ProjectToBUdget, obj2Weight
+$loadm isCandidate, isRoot
 $gdxin
 
 
