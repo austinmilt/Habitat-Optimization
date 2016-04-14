@@ -60,14 +60,14 @@ $gdxin
 $GDXIN %defaultgdx%
 $load Downstream, TargetsBeneficiary, TargetsControl, ProjectsPassability
 $load ProjectsBenefit, passBase, passChange, benefitMaxBase
-$load benefitMaxChange, cost, budget, weight, cap, ProjectToBUdget, obj2Weight
+$load benefitMaxChange, cost, budget, weight, cap, ProjectToBudget, obj2Weight
 $load isCandidate, isRoot
 $gdxin
 
 $GDXIN %rungdx%
 $loadm Downstream, TargetsBeneficiary, TargetsControl, ProjectsPassability
 $loadm ProjectsBenefit, passBase, passChange, benefitMaxBase
-$loadm benefitMaxChange, cost, budget, weight, cap, ProjectToBUdget, obj2Weight
+$loadm benefitMaxChange, cost, budget, weight, cap, ProjectToBudget, obj2Weight
 $loadm isCandidate, isRoot
 $gdxin
 
