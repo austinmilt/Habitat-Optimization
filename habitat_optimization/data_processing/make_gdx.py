@@ -140,10 +140,12 @@ def read_gms(gmsFile):
             
             # find sets (assumes one set per line after keyword)
             if stripLine.startswith(GMS_KWD_SET):
+                if stripLine.endswith(GMS_KWD_END):
+                    newLine = stripLine.split(' ', 1)[-1].strip()
+                else: newLine = fh.next().strip()
                 while True:
                     
                     # process the current set
-                    newLine = fh.next().strip()
                     if newLine == '': continue
                     setName, remainder = newLine.split(GMS_KWD_OPN, 1)
                     setIndices = [s.strip() for s in remainder.split(GMS_KWD_CLS)[0].split(GMS_KWD_SEP)]
@@ -151,28 +153,34 @@ def read_gms(gmsFile):
                     
                     # check if this is the last line of sets
                     if newLine.endswith(GMS_KWD_END): break
+                    newLine = fh.next().strip()
                     
             # find aliases
             elif stripLine.startswith(GMS_KWD_ALS):
+                if stripLine.endswith(GMS_KWD_END):
+                    newLine = stripLine.split(' ', 1)[-1].strip()
+                else: newLine = fh.next().strip()
                 while True:
                     
                     # process current alias
-                    newLine = fh.next().strip()
                     if newLine == '': continue
                     nameStr = newLine.split(GMS_KWD_OPN, 1)[1].rsplit(GMS_KWD_CLS, 1)[0]
                     names = [s.strip() for s in nameStr.split(GMS_KWD_SEP)]
                     for alias in names[1:]:
                         parameters[alias] = parameters[names[0]]
-                    
+
                     # check if this is the last line of sets
                     if newLine.endswith(GMS_KWD_END): break
+                    newLine = fh.next().strip()
                     
             # find parameters
             elif stripLine.startswith(GMS_KWD_PAR):
+                if stripLine.endswith(GMS_KWD_END):
+                    newLine = stripLine.split(' ', 1)[-1].strip()
+                else: newLine = fh.next().strip()
                 while True:
                 
                     # process the current parameter
-                    newLine = fh.next().strip()
                     if newLine == '': continue
                     paramStr, remainder = newLine.split(' ', 1)
                     if GMS_KWD_OPN not in paramStr: # zero dimension parameters
@@ -185,19 +193,23 @@ def read_gms(gmsFile):
                     
                     # check if this is the last line of parameters
                     if newLine.endswith(GMS_KWD_END): break
+                    newLine = fh.next().strip()
                     
             # find scalars
             elif stripLine.startswith(GMS_KWD_SCA):
+                if stripLine.endswith(GMS_KWD_END):
+                    newLine = stripLine.split(' ', 1)[-1].strip()
+                else: newLine = fh.next().strip()
                 while True:
                 
                     # process the current scalar
-                    newLine = fh.next().strip()
                     if newLine == '': continue
                     scalarName = newLine.split()[0]
                     parameters[scalarName] = Scalar(scalarName)
                     
                     # check if this is the last line of scalars
                     if newLine.endswith(GMS_KWD_END): break
+                    newLine = fh.next().strip()
                     
                     
             # find which parameters are to be loaded from gdx (assumes that
@@ -645,10 +657,10 @@ def make_gdx(
             elif isinstance(parameter, (Parameter, Scalar)): 
                 dbVars[pName] = database.add_parameter(parameter.name, parameter.ndim)
                 
-            # for the default gdx, skip parameters that will be in the run-specific gdxs
-            #   and vice-versa for run-specific gdxs
-            if (run == -1) and (pName not in parDefOnly): continue
-            elif (run <> -1) and (pName in parDefOnly): continue
+            # # for the default gdx, skip parameters that will be in the run-specific gdxs
+            # #   and vice-versa for run-specific gdxs
+            # if (run == -1) and (pName not in parDefOnly): continue
+            # elif (run <> -1) and (pName in parDefOnly): continue
             
             # loop over parameter data, adding records to the database as we go
             node = Node(parameter.data)
@@ -671,6 +683,11 @@ def make_gdx(
                                     '\'%s\' is not a member of \'%s\'.' % (index, indexSet.name)
                                 ))
                                 raise ValueError(msg)
+                                
+                # for the default gdx, skip parameters that will be in the run-specific gdxs
+                #   and vice-versa for run-specific gdxs
+                if (run == -1) and (pName not in parDefOnly): break
+                elif (run <> -1) and (pName in parDefOnly): break
                 
                 # for parameters with multiple values, add each record
                 #   individually
@@ -765,7 +782,6 @@ def make_gdx(
             except: print 'WARNING: Could not delete %s.' % outgdx
         
         else: outfile = outname + MAK_GDX
-        print 'Completed %s...' % outname
         outfiles.append(outfile)
         
         # try to clear up some memory

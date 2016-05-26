@@ -173,9 +173,12 @@ model fishHabitat /all/;
 
 
 * SOLVE
-option optcr = 1e-6;
+option MIP = cplex;
+option optcr = 1e-3;
+option reslim = 36000;
+option solvelink = 0;
 fishHabitat.optfile=1;
-fishHabitat.reslim = 3600;
+fishHabitat.reslim = 36000;
 fishHabitat.holdfixed = 1;
 fishHabitat.limcol    = 0;
 fishHabitat.limrow    = 0;
@@ -194,7 +197,8 @@ abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 parameter
     remainingBudget(B) 'leftover budget',
-    speciesHabitat(T) 'total available benefitMaxBase for target species';
+    speciesHabitat(T) 'total available benefitMaxBase for target species',
+    gap 'relative optimality gap of solution';
 sets
     doActions(J,P) "Barriers that should be removed",
     negHab(J,T) "Barrier/Fish pairs for which cumBenBar comes out negative which would require additional constraints";
@@ -209,6 +213,8 @@ remainingBudget(B) = budget(B) - sum((J,P)$(Candidates(J,P) and ProjectToBudget(
 
 speciesHabitat(T) = sum(J, cumBenBar.l(J,T));
 
+gap = 1 - (fishHabitat.objVal / fishHabitat.objEst);
+
 display totalBenefit.l;
 option doActions:0:0:2;
 display doActions;
@@ -216,9 +222,9 @@ display speciesHabitat;
 display remainingBudget;
 option negHab:0:0:2;
 display negHab;
-
+display gap;
 
 * WRITE OUTPUT GDX
 Execute_Unload 'results',
     totalBenefit.l=objective, doActions=actions, speciesHabitat=target_benefits,
-    remainingBudget=remaining_budget, negHab=negative_benefits;
+    remainingBudget=remaining_budget, negHab=negative_benefits, gap=optimality_gap;
