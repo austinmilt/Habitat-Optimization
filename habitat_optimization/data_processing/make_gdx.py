@@ -51,6 +51,8 @@ LOD_KWD_SRC = {
 }
 LOD_KWD_RDF = ''
 LOD_DEF_RUN = 1 
+LOD_KWD_RNG = '-'
+LOD_KWD_SRG = ':'
 
 
 # prune_barriers()
@@ -394,8 +396,9 @@ def load_data(tableFile, settingsFile, parameters):
     # string conversions to different information for parameters
     def str2run(string):
         s = string.strip()
-        if s == LOD_KWD_RDF: return MAK_KWD_RDF
-        else: return int(s)
+        if s == LOD_KWD_RDF: return [MAK_KWD_RDF, MAK_KWD_RDF]
+        elif LOD_KWD_RNG in s: return [int(r) for r in s.split(LOD_KWD_RNG)][:2]
+        else: return [int(s),int(s)]
         
     def str2values(string):
         values = string.strip().split(LOD_KWD_SEP)
@@ -411,7 +414,7 @@ def load_data(tableFile, settingsFile, parameters):
     # test for whether a symbol is table.csv or definitions.csv sourced
     def is_table_sourced(string):
         return LOD_KWD_SRC.get(string.lower(), None)
-    
+        
     # read in data from definitions file
     reader = csv.reader(open(settingsFile, 'r'))
     columns = reader.next()
@@ -430,7 +433,7 @@ def load_data(tableFile, settingsFile, parameters):
         
         # get information on this parameter
         r += 1
-        try: run = str2run(row[c2I[LOD_KWD_RUN]])
+        try: runStart, runStop = str2run(row[c2I[LOD_KWD_RUN]])
         except ValueError:
             msg = ''.join([
                 'Invalid value on row %i in definitions file. Be sure to ' % r,
@@ -439,34 +442,71 @@ def load_data(tableFile, settingsFile, parameters):
             raise ValueError(msg)
         parameter, indices = str2param(row[c2I[LOD_KWD_PAR]])
         values = str2values(row[c2I[LOD_KWD_VAL]])
-        
+ 
         # check if this is a duplicate of another row (same parameter/run)
         #   combo defined twice
-        duplicateTup = (run, parameter, str(indices))
-        if duplicateTup in duplicateCheck:
-            msg = ''.join([
-                'Repeat combinations of run + symbol + indices not allowed. ',
-                'Check row %i.' % r
-            ])
-            raise ValueError(msg)
-        else: duplicateCheck.add(duplicateTup)
-        
+        if type(runStart) is not int: duplicateTups = ((runStart, parameter, str(indices)),)
+        else: duplicateTups = tuple([(v, parameter, str(indices)) for v in xrange(runStart, runStop+1)])
+        for duplicateTup in duplicateTups:
+            if duplicateTup in duplicateCheck:
+                msg = ''.join([
+                    'Repeat combinations of run + symbol + indices not allowed. ',
+                    'Check row %i.' % r
+                ])
+                raise ValueError(msg)
+            else: duplicateCheck.add(duplicateTup)
+            
+        # process value ranges
+        valuesIsRange = False
+        if type(values) in (str, unicode):
+            if values.count(LOD_KWD_SRG) == 2:
+                valuesIsRange = True
+                try: start, stop, count = [float(v) for v in values.split(LOD_KWD_SRG)]
+                except:
+                    raise ValueError('Value range must be composed of numbers: %s' % values)
+                assert int(count) == count, 'Value range count must be an integer: %s' % values
+                if type(runStart) is int:
+                    if (runStop - runStart + 1) <> count:
+                        msg = 'Value range (%s) must match run range (%i-%i) length'
+                        msg = msg % (values, runStart, runStop)
+                        raise ValueError(msg)
+                increment = (stop - start) / (count - 1)
+                values = [start+increment*v for v in xrange(int(count))]
+                
         # add info to intermediate dict created before the final output
         #   dictionary of loaded data
         if parameter not in data2Param: data2Param[parameter] = []
-        data2Param[parameter].append(i)
-        data.append([run, parameter, indices, values, []])
+        runCount = 1
+        if type(runStart) is int:
+            runCount = runStop-runStart+1
+            for run in xrange(runStart, runStop+1):
+                ind = run-runStart
+                data2Param[parameter].append(i+ind)
+                if valuesIsRange:
+                    data.append([run, parameter, indices, values[ind], []])
+                    
+                else:
+                    data.append([run, parameter, indices, values, []])
+                    
+        else:
+            data2Param[parameter].append(i)
+            data.append([runStart, parameter, indices, values, []])
+        
         if len(barrierAliases.intersection(indices)) > 0:
             if not is_table_sourced(row[c2I[LOD_KWD_VIC]]):
                 err = srcErrStr % (LOD_KWD_VAL, row[c2I[LOD_KWD_PAR]], EXC_BAR_NAM)
                 raise AssertionError(err)
-            inTable.add(i)
+                
+            inTable.update(range(i,i+runCount))
+            
         elif len(barrierAliases.intersection([parameter])) > 0:
             if not is_table_sourced(row[c2I[LOD_KWD_VIC]]):
                 err = srcErrStr % (LOD_KWD_VAL, row[c2I[LOD_KWD_PAR]], EXC_BAR_NAM)
                 raise AssertionError(err)
-            inTable.add(i)
-        i += 1
+                
+            inTable.update(range(i,i+runCount))
+            
+        i += runCount
         
     # read in data from table file based on definitions
     reader = csv.reader(open(tableFile, 'r'))
@@ -621,6 +661,13 @@ def make_gdx(
     for k in data:
         if (len(data[k]) == 1) and (data[k][data[k].keys()[0]].ndim <> 0):
             parDefOnly.add(k)
+            
+    print ''.join((
+        'Remember, if you specify some dimensions of a symbol to change over ',
+        'runs, you must also specify those dimensions that do not change ',
+        'over runs (i.e. that you wish to use only default values). This ',
+        'is a current limitation of the code that is difficult to fix.'
+    ))
 
             
     # ~~ MAKE GDXS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -752,13 +799,17 @@ def make_gdx(
         
         # add empty parameters for data not supplied by the user
         if parameters is not None:
+            added = set()
             for pName in parameters:
                 parameter = parameters[pName]
                 if parameter.external and (parameter.loadname not in dbVars):
+                    if parameter in added: continue
                     if isinstance(parameter, Set): 
                         dbVars[pName] = database.add_set(parameter.loadname, parameter.ndim)
+                        added.add(parameter)
                     elif isinstance(parameter, (Parameter, Scalar)): 
                         dbVars[pName] = database.add_parameter(parameter.loadname, parameter.ndim)
+                        added.add(parameter)
             
                     
         # write the gdx for this run    
@@ -799,13 +850,13 @@ if __name__ == '__main__':
     
     # input files and params (assumed to be in the same directory as this script)
     thisFolder = os.path.dirname(os.path.abspath(__file__))
-    gmsFile = os.path.join(thisFolder, 'Habitat_Opt.gms')
-    tableFile = os.path.join(thisFolder, r'test_data\table.csv')
-    defFile = os.path.join(thisFolder, r'test_data\definitions.csv')
-    outFolder = os.path.join(thisFolder, 'test_data')
-    candidateColumns = ('can remove', 'can treat')
+    gmsFile = os.path.join(thisFolder, '..', 'optimization', 'Habitat_Opt.gms')
+    tableFile = os.path.join(thisFolder, '..', 'test', 'data', r'table.csv')
+    defFile = os.path.join(thisFolder, '..', 'test', 'data', r'definitions.csv')
+    outFolder = os.path.join(thisFolder, '..', 'test', 'data', 'gdxs')
+    candidateColumns = ('can remove',)
     bidColumn = 'BID'
-    dsidColumn = 'DSID'
+    dsidColumn = 'BID_DS'
     
     # load the gams parameter definitions from the gams model file
     gamsParameters = read_gms(gmsFile)

@@ -1,3 +1,5 @@
+import sys
+sys.path = ['../data_processing'] + sys.path
 from make_gdx import MAK_DEF_DDN, MAK_DEF_RDN
 
 # run()
@@ -33,10 +35,10 @@ def run(indir, outfile, defGDXStr=MAK_DEF_DDN, runGDXStr=MAK_DEF_RDN):
     import os, shutil, subprocess
     
     # get input gdxs and identify default gdx
-    defGDXs = glob(os.path.join(indir, defGDXStr + '*%s' % RUN_EXT_GDX))
+    defGDXs = [os.path.abspath(f) for f in glob(os.path.join(indir, defGDXStr + '*%s' % RUN_EXT_GDX))]
     assert len(defGDXs) == 1, 'Unable to determine which GDX is the default.'
     defGDX = defGDXs[0]
-    runGDXs = glob(os.path.join(indir, runGDXStr + '*%s' % RUN_EXT_GDX))
+    runGDXs = [os.path.abspath(f) for f in glob(os.path.join(indir, runGDXStr + '*%s' % RUN_EXT_GDX))]
     
     # set up for runs
     thisdir = os.path.abspath(os.path.dirname(__file__))
@@ -76,6 +78,6 @@ if __name__ == '__main__':
     import os
     thisdir = os.path.abspath(os.path.dirname(__file__))
     print run(
-        os.path.join(thisdir,'test_data'), 
-        os.path.join(thisdir,'test_results')
+        os.path.join(thisdir,r'..\test\data\gdxs'), 
+        os.path.abspath(os.path.join(thisdir,r'..\test\results'))
     )

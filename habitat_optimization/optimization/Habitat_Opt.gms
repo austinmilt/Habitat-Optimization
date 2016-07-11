@@ -169,16 +169,15 @@ cn_action_passXcumPass_upstream(J,K,P,T)$((not Root(J)) and TargetsControl(T) an
 *cn_controlXcumPass_equality(J,T)..
 *    action_benXcumPass(J,T) =g= cumPass(J,T) + actionBen(J) - 1;
 
+
+* INITIAL SOLVE WITH GUROBI
 model fishHabitat /all/;
-
-
-* SOLVE
-option MIP = cplex;
+option MIP = gurobi;
 option optcr = 1e-3;
-option reslim = 36000;
+option reslim = 7200;
 option solvelink = 0;
 fishHabitat.optfile=1;
-fishHabitat.reslim = 36000;
+fishHabitat.reslim = 7200;
 fishHabitat.holdfixed = 1;
 fishHabitat.limcol    = 0;
 fishHabitat.limrow    = 0;
@@ -191,6 +190,18 @@ benefitMaxChange(J,P,T)$(not Candidates(J,P)) = 0;
 
 solve fishHabitat using mip max totalBenefit;
 abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
+solve fishHabitat using mip max totalBenefit;
+abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
+solve fishHabitat using mip max totalBenefit;
+abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
+
+
+* SECONDARY SOLVE WITH RESULTS FROM GUROBI, USING CPLEX
+option MIP = cplex;
+option reslim = 64800;
+fishHabitat.reslim = 64800;
+solve fishHabitat using mip max totalBenefit;
+abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 
 * DISPLAY SUMMARY RESULTS
@@ -198,7 +209,8 @@ abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 parameter
     remainingBudget(B) 'leftover budget',
     speciesHabitat(T) 'total available benefitMaxBase for target species',
-    gap 'relative optimality gap of solution';
+    gap 'relative optimality gap of solution',
+    solve_time 'time taken to build and solve the model (timeExec)';
 sets
     doActions(J,P) "Barriers that should be removed",
     negHab(J,T) "Barrier/Fish pairs for which cumBenBar comes out negative which would require additional constraints";
@@ -215,6 +227,8 @@ speciesHabitat(T) = sum(J, cumBenBar.l(J,T));
 
 gap = 1 - (fishHabitat.objVal / fishHabitat.objEst);
 
+solve_time = timeExec;
+
 display totalBenefit.l;
 option doActions:0:0:2;
 display doActions;
@@ -223,8 +237,10 @@ display remainingBudget;
 option negHab:0:0:2;
 display negHab;
 display gap;
+display solve_time;
 
 * WRITE OUTPUT GDX
 Execute_Unload 'results',
     totalBenefit.l=objective, doActions=actions, speciesHabitat=target_benefits,
-    remainingBudget=remaining_budget, negHab=negative_benefits, gap=optimality_gap;
+    remainingBudget=remaining_budget, negHab=negative_benefits, gap=optimality_gap,
+    solve_time;

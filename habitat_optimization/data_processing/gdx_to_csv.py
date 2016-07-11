@@ -113,11 +113,11 @@ def concatenate_csvs(csvs, outCSV):
         # check for duplicate names
         csvName = os.path.splitext(os.path.basename(csvFile))[0]
         if csvName in names:
-            print ''.join(
+            print ''.join((
                 'WARNING: Found duplicate name %s. ' % csvName,
                 'You will not be able to distinguish multiple results because ',
                 'of this.'
-            )
+            ))
         names.add(csvName)
         
         # get data from the file
@@ -140,10 +140,23 @@ def concatenate_csvs(csvs, outCSV):
 if __name__ == '__main__':
 
     import os
+    from glob import glob
     
     # define default inputs
     thisDir = os.path.abspath(os.path.dirname(__file__))
-    inGDX = os.path.join(thisDir, 'results.gdx')
-    outCSV = os.path.join(thisDir, 'results.csv')
-    gdx_to_csv(inGDX, outCSV)
+    inGDXStr = os.path.join(thisDir, 'runs', 'run*', 'results.gdx')
+    outDir = os.path.join(thisDir, 'results')
+    outCSV = os.path.join(outDir, 'results.csv')
+    files = glob(inGDXStr)
+    intCSVs = []
+    try:
+        for f in files:
+            runName = f.split(os.sep)[-2].split('_')[1]
+            outcsv = os.path.join(outDir, runName+'.csv')
+            intCSVs.append(gdx_to_csv(f, outcsv))
+
+        concatenate_csvs(intCSVs, outCSV)
     
+    finally:
+        for f in intCSVs:
+            os.remove(f)
