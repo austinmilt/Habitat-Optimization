@@ -1,0 +1,55 @@
+#!/bin/bash
+
+
+# varying parameters, nested
+for i in {2500..10000..500}
+do
+
+	for s in {3..3..1}
+	do
+
+		for k in {4..4..1}
+		do
+	
+		# creating run results directory from parameter values
+		resultsdir=results_S_${s}_H_${i}_septhru_${k}_dumpoff
+	
+		# making the directory
+		mkdir $resultsdir
+	
+		# changing to results directory
+		cd $resultsdir
+	
+		# copying gams run files from the input directory to the run directory
+		folder="combined_solve"
+		cp ~/${folder}/balance_eqdef.gms .
+		cp ~/${folder}/balance_model_formulation.gms .
+		cp ~/${folder}/balance_report.gms .
+		cp ~/${folder}/balance_report_condor.gms .
+		cp ~/${folder}/farm_data.gms .
+		cp ~/${folder}/farm_landrent.gms .
+		cp ~/${folder}/farmops.gms .
+		cp ~/${folder}/farm_parameters.gms .
+		cp ~/${folder}/farm_rotations.gms .
+		cp ~/${folder}/farm_sets.gms .
+		cp ~/${folder}/rotation_eqdef.gms .
+		cp ~/${folder}/rotation_model_formulation.gms .
+		cp ~/${folder}/test_IN.gdx .
+		cp ~/${folder}/condor_gams .
+
+		# making a new file res.run to be passed to condor_gams to specify gams
+		#	run parameters
+		echo "hostname" > res.run
+		echo "echo 'pwd'" >> res.run
+		
+		echo "gams farmops.gms --condor=yes --SepThruStage=$k --Dump=off --scenario=$s --Nherd=$i" >> res.run
+		
+		# run condor_gams with the run file, and passing in input gams files
+		./condor_gams res.run "balance_eqdef.gms,balance_model_formulation.gms,balance_report.gms,balance_report_condor.gms,farm_data.gms,farm_landrent.gms,farmops.gms,farm_parameters.gms,farm_rotations.gms,farm_sets.gms,rotation_eqdef.gms,rotation_model_formulation.gms,test_IN.gdx" &
+		cd ..
+
+
+done
+done
+done
+

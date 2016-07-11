@@ -1,0 +1,1 @@
+This directory contains scripts and data for creating benchmark datasets for fishwerks solvers (i.e. "hard" problems).
