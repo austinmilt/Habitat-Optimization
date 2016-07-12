@@ -219,7 +219,7 @@ sets
 actions.l(J,P) = round(actions.l(J,P));
 doActions(J,P) = yes$(actions.l(J,P));
 
-negHab(J,T) = yes$(cumBenBar.l(J,T) < 0);
+negHab(J,T) = yes$(cumBenBar.l(J,T) < -1e-6);
 
 remainingBudget(B) = budget(B) - sum((J,P)$(Candidates(J,P) and ProjectToBudget(P,B)), cost(J,P)*actions.l(J,P));
 
