@@ -174,10 +174,10 @@ cn_action_passXcumPass_upstream(J,K,P,T)$((not Root(J)) and TargetsControl(T) an
 model fishHabitat /all/;
 option MIP = gurobi;
 option optcr = 1e-3;
-option reslim = 7200;
+option reslim = 3600;
 option solvelink = 0;
 fishHabitat.optfile=1;
-fishHabitat.reslim = 7200;
+fishHabitat.reslim = 3600;
 fishHabitat.holdfixed = 1;
 fishHabitat.limcol    = 0;
 fishHabitat.limrow    = 0;
@@ -198,8 +198,8 @@ abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 
 * SECONDARY SOLVE WITH RESULTS FROM GUROBI, USING CPLEX
 option MIP = cplex;
-option reslim = 64800;
-fishHabitat.reslim = 64800;
+option reslim = 3600;
+fishHabitat.reslim = 3600;
 solve fishHabitat using mip max totalBenefit;
 abort$(fishHabitat.SolveStat = %SolveStat.UserInterrupt%) 'job interrupted';
 

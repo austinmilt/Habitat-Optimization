@@ -48,6 +48,8 @@ echo "queue" >> gams.cmd
 echo "#!/bin/bash"              > run$id.sh
 echo 'export PATH="/mnt/ws/progs/gams/current:$PATH"'   >> run$id.sh
 echo 'export LD_LIBRARY_PATH="/mnt/ws/progs/gams/current:$LD_LIBRARY_PATH"'   >> run$id.sh
+echo 'export GUROBI_HOME="/progs/gurobi/linux64"' >> run$id.sh
+echo 'export GRB_LICENSE_FILE="/progs/gurobi/gurobi.lic"' >> run$id.sh
 #echo 'echo $HOSTNAME' >> run$id.sh
 
 if [ -e ${1} ]; then 

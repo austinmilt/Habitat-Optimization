@@ -52,3 +52,7 @@ Temporary Items
 *.gpr
 *.csv
 *.pyc
+watershed_benchmarks/*
+~*
+clustering*
+java_todo.txt
