@@ -79,5 +79,5 @@ if __name__ == '__main__':
     thisdir = os.path.abspath(os.path.dirname(__file__))
     print run(
         os.path.join(thisdir,r'..\test\data\gdxs'), 
-        os.path.abspath(os.path.join(thisdir,r'..\test\results'))
+        os.path.abspath(os.path.join(thisdir,r'..\test\results\results.csv'))
     )
